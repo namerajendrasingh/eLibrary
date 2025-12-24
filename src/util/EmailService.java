@@ -59,7 +59,7 @@ public class EmailService {
 
         message.setContent(html, "text/html; charset=UTF-8");
 
-        Transport.send(message);  // synchronous; call from background thread in Swing [web:752][web:759]
+        Transport.send(message); 
     }
 
     private String escape(String s) {

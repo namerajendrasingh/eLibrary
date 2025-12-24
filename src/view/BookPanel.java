@@ -228,6 +228,7 @@ public class BookPanel extends JPanel {
             loadPage(currentPage - 1);
         }
     }
+    
 
     /**
      * ✅ NEW: Next page

@@ -149,6 +149,12 @@ public class DashboardSidebar extends JPanel {
                 e -> onTabSelect.accept("Issue/Return")));
         }
         
+     // ✅ NEW: Book Upload Menu (Admin/Staff only)
+        if ("ADMIN".equals(user.getRole()) || "STAFF".equals(user.getRole())) {
+            navPanel.add(createPrimaryNavButton("Book Upload", "/icons/upload.png", 
+                e -> onTabSelect.accept("Book Upload")));
+        }
+        
         if ("ADMIN".equals(user.getRole())) {
             JSeparator adminSep = new JSeparator(SwingConstants.HORIZONTAL);
             adminSep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));

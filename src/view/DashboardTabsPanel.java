@@ -17,6 +17,9 @@ public class DashboardTabsPanel extends JTabbedPane {
     private IssueReturnPanel issueReturnPanel;
     private UserManagementPanel usersPanel;
     private ReportsPanel reportsPanel;
+    private BookUploadPanel bookUploadPanel;  // ✅ NEW FIELD
+
+    
 
     public DashboardTabsPanel(User user) {
         setFont(new Font("Segoe UI", Font.PLAIN, 13));
@@ -36,6 +39,11 @@ public class DashboardTabsPanel extends JTabbedPane {
             issueReturnPanel = new IssueReturnPanel();
             addTab("Issue/Return", issueReturnPanel);
             panels.put("Issue/Return", issueReturnPanel);
+            
+         // ✅ NEW: Book Upload (Admin/Staff)
+            bookUploadPanel = new BookUploadPanel();
+            addTab("Book Upload", bookUploadPanel);
+            panels.put("Book Upload", bookUploadPanel);
         }
 
         // ✅ Admin-only tabs
@@ -75,6 +83,11 @@ public class DashboardTabsPanel extends JTabbedPane {
         // Reports panel (triggers stats → charts cascade)
         if (reportsPanel != null) {
             reportsPanel.refreshData();  // Calls ReportsStatsPanel → ReportsChartsPanel
+        }
+        
+     // ✅ NEW: Book Upload panel (no refresh needed)
+        if (bookUploadPanel != null) {
+            // BookUploadPanel doesn't need refresh (static utility)
         }
     }
 

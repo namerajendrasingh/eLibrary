@@ -17,7 +17,7 @@ public class DBUtil {
         config.setUsername("postgres");
         config.setPassword("public");
 
-        config.setMaximumPoolSize(10);     // adjust later as needed
+        config.setMaximumPoolSize(100);     // adjust later as needed
         config.setMinimumIdle(3);
         config.setConnectionTimeout(30000);
         config.setIdleTimeout(600000);
