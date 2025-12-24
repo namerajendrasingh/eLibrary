@@ -7,6 +7,7 @@ public class BookIssue {
     private int id;
     private int userId;
     private int bookId;
+    private String bookName;
     private Timestamp issueDate;
     private Timestamp dueDate;
     private Timestamp returnDate;
@@ -30,8 +31,18 @@ public class BookIssue {
     public void setId(int id) {
         this.id = id;
     }    
+    
+    
 
-    public int getUserId() {
+    public String getBookName() {
+		return bookName;
+	}
+
+	public void setBookName(String bookName) {
+		this.bookName = bookName;
+	}
+
+	public int getUserId() {
         return userId;
     }
 

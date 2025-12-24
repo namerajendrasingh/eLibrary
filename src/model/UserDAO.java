@@ -187,4 +187,48 @@ private String hashPassword(String password) {
     }
 }
 
+//✅ PAGINATION METHODS
+public List<User> getUsersWithPagination(int offset, int limit) {
+ String sql = """
+     SELECT id, username, email, role 
+     FROM users 
+     ORDER BY id ASC 
+     LIMIT ? OFFSET ?
+ """;
+ 
+ try (PreparedStatement pstmt = DBUtil.getConnection().prepareStatement(sql)) {
+     pstmt.setInt(1, limit);
+     pstmt.setInt(2, offset);
+     try (ResultSet rs = pstmt.executeQuery()) {
+         List<User> users = new ArrayList<>();
+         while (rs.next()) {
+             User user = new User();
+             user.setId(rs.getInt("id"));
+             user.setUsername(rs.getString("username"));
+             user.setEmail(rs.getString("email"));
+             user.setRole(rs.getString("role"));
+             users.add(user);
+         }
+         return users;
+     }
+ } catch (SQLException e) {
+     e.printStackTrace();
+     return new ArrayList<>();
+ }
+}
+
+public int getTotalUserCount() {
+ String sql = "SELECT COUNT(*) FROM users";
+ try (PreparedStatement pstmt = DBUtil.getConnection().prepareStatement(sql);
+      ResultSet rs = pstmt.executeQuery()) {
+     if (rs.next()) {
+         return rs.getInt(1);
+     }
+ } catch (SQLException e) {
+     e.printStackTrace();
+ }
+ return 0;
+}
+
+
 }

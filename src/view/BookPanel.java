@@ -3,20 +3,25 @@ import java.awt.BorderLayout;
 import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextField;
+import javax.swing.RowFilter;
 import javax.swing.RowSorter;
 import javax.swing.RowSorter.SortKey;
 import javax.swing.SortOrder;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
@@ -36,6 +41,9 @@ public class BookPanel extends JPanel {
     private JLabel pageInfoLabel;      // ✅ NEW PAGE INFO
     private BookDAO bookDAO;
     private String userRole;
+    private JTextField searchField;      // ✅ NEW: Search field
+    private JLabel searchLabel;          // ✅ NEW: Search label
+    private JComboBox<String> categoryFilter;
 
     // ✅ PAGINATION STATE
     private int currentPage = 0;
@@ -53,6 +61,9 @@ public class BookPanel extends JPanel {
     private void initUI() {
         setLayout(new BorderLayout(10, 10));
         setBorder(javax.swing.BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        
+        JPanel filterPanel = createFilterPanel();
+        add(filterPanel, BorderLayout.NORTH);
 
         // Table model
         tableModel = new DefaultTableModel(
@@ -115,10 +126,11 @@ public class BookPanel extends JPanel {
         scrollPane.setBorder(javax.swing.BorderFactory.createLineBorder(new java.awt.Color(200, 200, 200)));
         add(scrollPane, BorderLayout.CENTER);
 
-        // ✅ NEW PAGINATION PANEL
+        JPanel southPanel = new JPanel(new BorderLayout(10, 0));
+        // ✅ NEW PAGINATION PANEL       
+        // Pagination panel (WEST)
         JPanel paginationPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         paginationPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 0, 0, 0));
-        
         prevBtn = new JButton("⬅️ Previous");
         nextBtn = new JButton("➡️ Next");
         pageInfoLabel = new JLabel("Page 1 (1-50 of 0)");
@@ -158,11 +170,111 @@ public class BookPanel extends JPanel {
         buttonPanel.add(refreshBtn);
 
         // ✅ Combine pagination + buttons
-        JPanel southPanel = new JPanel(new BorderLayout());
-        southPanel.add(paginationPanel, BorderLayout.WEST);
+        southPanel.add(paginationPanel, BorderLayout.WEST); 
         southPanel.add(buttonPanel, BorderLayout.EAST);
         add(southPanel, BorderLayout.SOUTH);
     }
+    
+    
+    /**
+     * ✅ NEW: Filter Panel with Search
+     */
+    /**
+     * ✅ UPDATED: Filter Panel with Search + Category
+     */
+    private JPanel createFilterPanel() {
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 8));
+        filterPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 15, 0));
+
+        // Search box
+        searchLabel = new JLabel("🔍 Search: ");
+        searchField = new JTextField(20);
+        searchField.addActionListener(e -> applyFilters());
+
+        // Debounce search (300ms)
+        Timer searchTimer = new Timer(300, e -> applyFilters());
+        searchTimer.setRepeats(false);
+        searchField.addActionListener(e -> {
+            searchTimer.stop();
+            searchTimer.start();
+        });
+
+        // Category filter
+        JLabel categoryLabel = new JLabel("📂 Category: ");
+        String[] categories = {"All", "English", "Novel", "Engineering", "Maths", "Science", "History", "Computer", "Medical"};
+        JComboBox<String> categoryFilter = new JComboBox<>(categories);
+        categoryFilter.addActionListener(e -> applyFilters());
+        this.categoryFilter = categoryFilter;  // ✅ Store reference
+
+        filterPanel.add(searchLabel);
+        filterPanel.add(searchField);
+        filterPanel.add(categoryLabel);
+        filterPanel.add(categoryFilter);
+
+        return filterPanel;
+    }
+
+    
+    /**
+     * ✅ NEW: Apply BOTH search + category filters
+     */
+    private void applyFilters() {
+        RowFilter<DefaultTableModel, Object> filter = null;
+        List<RowFilter<Object,Object>> filters = new ArrayList<>();
+
+        // 1. Global search (all columns)
+        String searchText = searchField.getText().trim().toLowerCase();
+        if (!searchText.isEmpty()) {
+            filters.add(RowFilter.regexFilter("(?i)" + searchText));
+        }
+
+        // 2. Category filter (column 4)
+        String category = (String) categoryFilter.getSelectedItem();
+        if (!"All".equals(category)) {
+            filters.add(RowFilter.regexFilter("(?i)" + category, 4));  // Column 4 = Category
+        }
+
+        // Combine filters
+        if (!filters.isEmpty()) {
+            filter = RowFilter.andFilter(filters);
+        }
+
+        sorter.setRowFilter(filter);
+    }
+    
+    /**
+     * ✅ NEW: Apply search filter across ALL columns
+     */
+    private void applySearchFilter() {
+        String searchText = searchField.getText().trim().toLowerCase();
+        
+        if (searchText.isEmpty()) {
+            sorter.setRowFilter(null);  // Show all
+        } else {
+            // Search across ALL columns (Title, Author, ISBN, Category, etc.)
+            RowFilter<DefaultTableModel, Object> filter = 
+                RowFilter.regexFilter("(?i)" + searchText);  // Case-insensitive
+            sorter.setRowFilter(filter);
+        }
+    }
+
+    private void loadCurrentPage() {
+        searchField.setText("");           // Clear search
+        categoryFilter.setSelectedIndex(0); // Clear category (All)
+        applyFilters();                    // Apply cleared filters
+        loadPage(currentPage);
+    }
+
+   
+
+    /**
+     * ✅ NEW: Clear search utility
+     */
+    private void clearFilters() {
+        searchField.setText("");
+        applySearchFilter();
+    }
+
 
     /**
      * ✅ FIXED Comparator
@@ -213,12 +325,6 @@ public class BookPanel extends JPanel {
         sorter.setSortKeys(List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
     }
 
-    /**
-     * ✅ NEW: Load current page (for refresh)
-     */
-    private void loadCurrentPage() {
-        loadPage(currentPage);
-    }
 
     /**
      * ✅ NEW: Previous page
@@ -229,6 +335,10 @@ public class BookPanel extends JPanel {
         }
     }
     
+    
+    private boolean hasMoreRecords() {
+        return (currentPage + 1) * pageSize < totalRecords;
+    }
 
     /**
      * ✅ NEW: Next page
@@ -415,6 +525,7 @@ public class BookPanel extends JPanel {
         sorter.setSortKeys(currentSortKeys);
     }
 
+    /*
     public void refreshData() {
         int selectedRow = bookTable.getSelectedRow();
         List<SortKey> currentSortKeys = (List<SortKey>) sorter.getSortKeys();
@@ -426,5 +537,12 @@ public class BookPanel extends JPanel {
         }
         
         sorter.setSortKeys(currentSortKeys);
+    }*/
+    
+    /**
+     * ✅ Updated refreshData to preserve filters
+     */
+    public void refreshData() {
+        loadCurrentPage();  // Keeps search filter active
     }
 }
