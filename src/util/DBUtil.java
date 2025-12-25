@@ -16,13 +16,17 @@ public class DBUtil {
         config.setJdbcUrl("jdbc:postgresql://localhost:5432/elibrary");
         config.setUsername("postgres");
         config.setPassword("public");
-
-        config.setMaximumPoolSize(100);     // adjust later as needed
-        config.setMinimumIdle(3);
-        config.setConnectionTimeout(30000);
-        config.setIdleTimeout(600000);
-        config.setMaxLifetime(1800000);
-
+        
+        // ✅ CORRECT HikariCP Properties (NO housekeeperInterval)
+        config.setMaximumPoolSize(200);                    // ✅ Max connections
+        config.setMinimumIdle(10);                         // ✅ Min idle connections
+        config.setConnectionTimeout(30_000);              // ✅ 30s connect timeout
+        config.setIdleTimeout(5 * 60 * 1000);             // ✅ 5min idle timeout
+        config.setMaxLifetime(20 * 60 * 1000);            // ✅ 20min max lifetime
+        config.setLeakDetectionThreshold(60_000);         // ✅ Detect leaks > 1min
+        config.addDataSourceProperty("cachePrepStmts", "true");
+        config.addDataSourceProperty("prepStmtCacheSize", "250");
+        config.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
         config.setDriverClassName("org.postgresql.Driver");
 
         dataSource = new HikariDataSource(config);

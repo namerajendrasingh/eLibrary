@@ -4,12 +4,9 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridLayout;
-import java.awt.event.ActionEvent;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.ArrayList;
-import java.util.Set;
-import java.util.HashSet;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -22,6 +19,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.RowFilter;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
@@ -223,25 +221,45 @@ public class UserManagementPanel extends JPanel {
             };
         };
     }
-
+    
+    /**
+     * ✅ FIXED: Async non-blocking loadPage (NO UI FREEZE + NO LEAKS)
+     */
     private void loadPage(int page) {
         currentPage = page;
-        tableModel.setRowCount(0);
         
-        List<User> users = userDAO.getUsersWithPagination(page * pageSize, pageSize);
-        totalRecords = userDAO.getTotalUserCount();
-        
-        for (User u : users) {
-            tableModel.addRow(new Object[]{
-                    u.getId(),
-                    u.getUsername(),
-                    u.getEmail() != null ? u.getEmail() : "—",
-                    u.getRole() != null ? u.getRole() : "—"
-            });
-        }
-        
-        updatePaginationControls();
+        // ✅ BACKGROUND THREAD - No UI blocking!
+        new Thread(() -> {
+            try {
+                List<User> users = userDAO.getUsersWithPagination(page * pageSize, pageSize);
+                int total = userDAO.getTotalUserCount();
+                
+                // ✅ UI THREAD - Safe table update
+                SwingUtilities.invokeLater(() -> {
+                    tableModel.setRowCount(0);
+                    for (User u : users) {
+                        tableModel.addRow(new Object[]{
+                                u.getId(),
+                                u.getUsername(),
+                                u.getEmail() != null ? u.getEmail() : "—",
+                                u.getRole() != null ? u.getRole() : "—"
+                        });
+                    }
+                    totalRecords = total;
+                    updatePaginationControls();
+                });
+                
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> {
+                    JOptionPane.showMessageDialog(this, 
+                        "❌ Failed to load users: " + e.getMessage(), 
+                        "Load Error", JOptionPane.ERROR_MESSAGE);
+                });
+            }
+        }, "UserLoader-" + page).start();  // Named thread
     }
+
+    
 
     private void loadCurrentPage() {
         loadPage(currentPage);
