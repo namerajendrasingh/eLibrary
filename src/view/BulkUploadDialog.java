@@ -20,28 +20,34 @@ import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
+import model.BookCategory;
+import model.BookCategoryDAO;
 import util.PDFUploadUtility;
 
 public class BulkUploadDialog extends JDialog {
     
-    private JComboBox<String> categoryCombo;
+    private JComboBox<BookCategory> categoryCombo; 
     private JTextArea statusArea;
     private JButton selectFolderBtn, startUploadBtn;
     private List<File> selectedPDFs;
     private int uploadedCount = 0;
     private ActionListener onComplete;
+    private final BookCategoryDAO categoryDAO; 
     
     public BulkUploadDialog(Window parent, ActionListener onComplete) {
         super(parent, "📦 Bulk Upload PDFs", Dialog.ModalityType.APPLICATION_MODAL);
         this.onComplete = onComplete;
+        this.categoryDAO = new BookCategoryDAO();  // ✅ Initialize DAO
         this.selectedPDFs = new ArrayList<>();
         initUI();
+        loadCategories();  // ✅ Load categories on startup
     }
     
     private void initUI() {
@@ -64,11 +70,11 @@ public class BulkUploadDialog extends JDialog {
         // Main Panel
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         
-        // Category Selection
+        // ✅ DYNAMIC Category Selection (REPLACED)
         JPanel categoryPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         categoryPanel.add(new JLabel("📂 Category for ALL PDFs: "));
-        categoryCombo = new JComboBox<>(PDFUploadUtility.CATEGORIES);
-        categoryCombo.setPreferredSize(new Dimension(200, 28));
+        categoryCombo = new JComboBox<>();  // ✅ Empty initially
+        categoryCombo.setPreferredSize(new Dimension(220, 28));
         categoryPanel.add(categoryCombo);
         mainPanel.add(categoryPanel, BorderLayout.NORTH);
         
@@ -183,10 +189,41 @@ public class BulkUploadDialog extends JDialog {
             }
         }
     }
+    
+    
+    /**
+     * ✅ DYNAMICALLY LOAD CATEGORIES FROM DB
+     */
+    private void loadCategories() {
+        new Thread(() -> {
+            List<BookCategory> categories = categoryDAO.getAllCategories();
+            
+            SwingUtilities.invokeLater(() -> {
+                categoryCombo.removeAllItems();
+                if (categories.isEmpty()) {
+                    categoryCombo.addItem(new BookCategory(0, "❌ No Categories Found"));
+                    statusArea.append("⚠️ No categories in database. Please add categories first.\n");
+                } else {
+                    for (BookCategory cat : categories) {
+                        categoryCombo.addItem(cat);
+                    }
+                    statusArea.append(String.format("✅ Loaded %d categories from database\n", categories.size()));
+                }
+            });
+        }).start();
+    }
 
     private void startBulkUpload() {
-        String category = (String) categoryCombo.getSelectedItem();
-        statusArea.append("\n🚀 Starting bulk upload...\n\n");
+    	BookCategory selectedCategory = (BookCategory) categoryCombo.getSelectedItem();
+        if (selectedCategory == null || selectedCategory.getId() == 0) {
+            JOptionPane.showMessageDialog(this, "❌ Please select a valid category!", "Invalid Category", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        // ✅ FIXED: Extract String name before passing
+        String categoryName = selectedCategory.getName();  // ← String!
+        
+        statusArea.append(String.format("\n🚀 Starting bulk upload to category: %s\n\n", categoryName));
         
         new Thread(() -> {
             uploadedCount = 0;
@@ -197,9 +234,10 @@ public class BulkUploadDialog extends JDialog {
                 statusArea.append(String.format("⏳ [%d/%d] Uploading: %s\n", 
                     i + 1, total, pdf.getName()));
                 
+                // ✅ FIXED: Pass String categoryName (not BookCategory)
                 boolean success = PDFUploadUtility.uploadPDF(
                     extractTitleFromFilename(pdf.getName()), 
-                    category, 
+                    categoryName,  // ← String, not BookCategory!
                     pdf
                 );
                 
@@ -228,12 +266,17 @@ public class BulkUploadDialog extends JDialog {
     
     private String extractTitleFromFilename(String filename) {
         String name = filename.toLowerCase().replace(".pdf", "").trim();
-        // Remove category prefix if exists
-        String category = ((String) categoryCombo.getSelectedItem()).toLowerCase();
-        if (name.startsWith(category)) {
-            name = name.substring(category.length()).trim();
+        
+        // ✅ FIXED: Safe category name extraction
+        BookCategory cat = (BookCategory) categoryCombo.getSelectedItem();
+        if (cat != null && cat.getId() != 0) {
+            String category = cat.getName().toLowerCase();
+            if (name.startsWith(category)) {
+                name = name.substring(category.length()).trim();
+            }
         }
         return name.replace("_", " ").replace("-", " ").trim();
     }
+
 }
 
