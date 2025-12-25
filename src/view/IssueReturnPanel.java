@@ -75,68 +75,73 @@ public class IssueReturnPanel extends JPanel {
         //loadActiveIssues();
     }
     
-    private JPanel createIssuePanel() {  // ✅ EXTRACTED METHOD (called once)
-        JPanel issuePanel = new JPanel(new GridBagLayout());
-        issuePanel.setBorder(BorderFactory.createTitledBorder("Issue New Book"));
-        ((TitledBorder)issuePanel.getBorder()).setTitleFont(new Font("Segoe UI", Font.BOLD, 14));
-        issuePanel.setPreferredSize(new Dimension(400, 175));
+   private JPanel createIssuePanel() {
+    JPanel issuePanel = new JPanel(new BorderLayout());
+    
+    // ✅ COMPACT SIZE: 320px wide × 280px high
+    JPanel contentPanel = new JPanel(new GridBagLayout());
+    contentPanel.setBorder(BorderFactory.createTitledBorder("Issue New Book"));
+    ((TitledBorder)contentPanel.getBorder()).setTitleFont(new Font("Segoe UI", Font.BOLD, 14));
+    contentPanel.setPreferredSize(new Dimension(320, 280));  // ✅ REDUCED!
+    
+    GridBagConstraints gbc = new GridBagConstraints();
+    gbc.insets = new Insets(12, 12, 12, 12);
+    gbc.anchor = GridBagConstraints.WEST;
+    gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(8, 10, 8, 10);
-        gbc.anchor = GridBagConstraints.WEST;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+    int row = 0;
+    
+    // User ID (compact)
+    gbc.gridx = 0; gbc.gridy = row++; gbc.gridwidth = 1;
+    contentPanel.add(new JLabel("User ID:"), gbc);
+    gbc.gridx = 1;
+    userIdField = new JTextField(10);
+    userIdField.setPreferredSize(new Dimension(110, 30));
+    contentPanel.add(userIdField, gbc);
 
-        int row = 0;
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1;
-        issuePanel.add(new JLabel("User ID:"), gbc);
-        gbc.gridx = 1;
-        userIdField = new JTextField(10);
-        userIdField.setPreferredSize(new Dimension(120, 28));
-        issuePanel.add(userIdField, gbc);
-        row++;
+    // Book ID (compact)
+    gbc.gridx = 0; gbc.gridy = row++; gbc.gridwidth = 1;
+    contentPanel.add(new JLabel("Book ID:"), gbc);
+    gbc.gridx = 1;
+    bookIdField = new JTextField(10);
+    bookIdField.setPreferredSize(new Dimension(110, 30));
+    contentPanel.add(bookIdField, gbc);
 
-        gbc.gridx = 0; gbc.gridy = row;
-        issuePanel.add(new JLabel("Book ID:"), gbc);
-        gbc.gridx = 1;
-        bookIdField = new JTextField(10);
-        bookIdField.setPreferredSize(new Dimension(120, 28));
-        issuePanel.add(bookIdField, gbc);
-        row++;
+    // Due Days (compact)
+    gbc.gridx = 0; gbc.gridy = row++; gbc.gridwidth = 1;
+    contentPanel.add(new JLabel("Due (days):"), gbc);
+    gbc.gridx = 1;
+    dueDateDaysSpinner = new JSpinner(new SpinnerNumberModel(14, 1, 365, 1));
+    ((JSpinner.DefaultEditor) dueDateDaysSpinner.getEditor()).getTextField().setColumns(8);
+    dueDateDaysSpinner.setPreferredSize(new Dimension(110, 30));
+    contentPanel.add(dueDateDaysSpinner, gbc);
 
-        gbc.gridx = 0; gbc.gridy = row;
-        issuePanel.add(new JLabel("Due in (days):"), gbc);
-        gbc.gridx = 1;
-        dueDateDaysSpinner = new JSpinner(new SpinnerNumberModel(14, 1, 365, 1));
-        ((JSpinner.DefaultEditor) dueDateDaysSpinner.getEditor()).getTextField().setColumns(8);
-        issuePanel.add(dueDateDaysSpinner, gbc);
-        row++;
+    // Issue Button (compact + centered)
+    gbc.gridx = 0; gbc.gridy = row++; gbc.gridwidth = 2;
+    gbc.insets = new Insets(15, 12, 12, 12);
+    gbc.anchor = GridBagConstraints.CENTER;
+    issueBtn = new JButton("✅ Issue");
+    issueBtn.setPreferredSize(new Dimension(120, 36));
+    issueBtn.addActionListener(e -> issueBook());
+    contentPanel.add(issueBtn, gbc);
 
-        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2;
-        gbc.anchor = GridBagConstraints.CENTER;
-        issueBtn = new JButton("Issue Book");
-        issueBtn.addActionListener(e -> issueBook());
-        issuePanel.add(issueBtn, gbc);
-
-        return issuePanel;
-    }
+    issuePanel.add(contentPanel, BorderLayout.CENTER);
+    return issuePanel;
+}
 
 
-   private void initUI() {
+  private void initUI() {
     setLayout(new BorderLayout(10, 10));
     setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
 
-    // ✅ 1. ISSUE PANEL (WEST - unchanged)
+    // ✅ 1. ISSUE PANEL (WEST)
     add(createIssuePanel(), BorderLayout.WEST);
 
-    // ✅ 2. MAIN CENTER PANEL (Filters + Table + Pagination)
+    // ✅ 2. MAIN CENTER PANEL
     JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
     
-    // TOP ROW: Filters + Pagination
-    JPanel topRowPanel = new JPanel(new BorderLayout(10, 0));
-    topRowPanel.add(createFilterPanel(), BorderLayout.WEST);      // Left: Search + Status
-    topRowPanel.add(createPaginationPanel(), BorderLayout.EAST);  // Right: Pagination
-    
-    mainPanel.add(topRowPanel, BorderLayout.NORTH);
+    // TOP: Only Filters (Search + Status)
+    mainPanel.add(createFilterPanel(), BorderLayout.NORTH);
     
     // CENTER: Table
     setupActiveIssuesTable();
@@ -146,12 +151,15 @@ public class IssueReturnPanel extends JPanel {
     scrollPane.setBorder(border);
     mainPanel.add(scrollPane, BorderLayout.CENTER);
     
+    // ✅ BOTTOM LEFT: PAGINATION (NEW POSITION!)
+    JPanel bottomPanel = new JPanel(new BorderLayout());
+    bottomPanel.add(createPaginationPanel(), BorderLayout.WEST);
+    bottomPanel.add(createButtonPanel(), BorderLayout.EAST);
+    mainPanel.add(bottomPanel, BorderLayout.SOUTH);
+    
     add(mainPanel, BorderLayout.CENTER);
-
-    // ✅ 3. ACTION BUTTONS (SOUTH - Return/Refresh only)
-    JPanel buttonPanel = createButtonPanel();
-    add(buttonPanel, BorderLayout.SOUTH);
 }
+
 
     /**
      * ✅ NEW: Filter Panel (Search + Status)
