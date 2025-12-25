@@ -221,44 +221,24 @@ public class UserManagementPanel extends JPanel {
             };
         };
     }
-    
-    /**
-     * ✅ FIXED: Async non-blocking loadPage (NO UI FREEZE + NO LEAKS)
-     */
+
     private void loadPage(int page) {
         currentPage = page;
+        tableModel.setRowCount(0);
+        List<User> users = userDAO.getUsersWithPagination(page * pageSize, pageSize);
+        totalRecords = userDAO.getTotalUserCount();
         
-        // ✅ BACKGROUND THREAD - No UI blocking!
-        new Thread(() -> {
-            try {
-                List<User> users = userDAO.getUsersWithPagination(page * pageSize, pageSize);
-                int total = userDAO.getTotalUserCount();
-                
-                // ✅ UI THREAD - Safe table update
-                SwingUtilities.invokeLater(() -> {
-                    tableModel.setRowCount(0);
-                    for (User u : users) {
-                        tableModel.addRow(new Object[]{
-                                u.getId(),
-                                u.getUsername(),
-                                u.getEmail() != null ? u.getEmail() : "—",
-                                u.getRole() != null ? u.getRole() : "—"
-                        });
-                    }
-                    totalRecords = total;
-                    updatePaginationControls();
-                });
-                
-            } catch (Exception e) {
-                SwingUtilities.invokeLater(() -> {
-                    JOptionPane.showMessageDialog(this, 
-                        "❌ Failed to load users: " + e.getMessage(), 
-                        "Load Error", JOptionPane.ERROR_MESSAGE);
-                });
-            }
-        }, "UserLoader-" + page).start();  // Named thread
+        for (User u : users) {
+            tableModel.addRow(new Object[]{
+                    u.getId(),
+                    u.getUsername(),
+                    u.getEmail() != null ? u.getEmail() : "—",
+                    u.getRole() != null ? u.getRole() : "—"
+            });
+        }
+        
+        updatePaginationControls();
     }
-
     
 
     private void loadCurrentPage() {

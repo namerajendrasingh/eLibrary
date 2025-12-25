@@ -176,7 +176,7 @@ public class BookPanel extends JPanel {
     }
     
     /**
-     * ✅ Filter Panel with Search + Category
+     * ✅ UPDATED: Filter Panel with Search + Category
      */
     private JPanel createFilterPanel() {
         JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 8));

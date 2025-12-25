@@ -20,7 +20,7 @@ public class BookDAO {
         String sql = """
             INSERT INTO books (title, author, isbn, category_id, total_copies, available_copies, file_path)
             VALUES (?, ?, ?, (SELECT category_id FROM book_category WHERE category_name = ? AND status = true), ?, ?, ?)
-            """;
+        """;
         
         try (PreparedStatement pstmt = DBUtil.getConnection().prepareStatement(sql, PreparedStatement.RETURN_GENERATED_KEYS)) {
             pstmt.setString(1, book.getTitle());
