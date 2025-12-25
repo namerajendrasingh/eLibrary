@@ -1,13 +1,17 @@
 package view;
 
 import java.awt.BorderLayout;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.util.List;
 
 import javax.swing.BorderFactory;
+import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -24,7 +28,7 @@ public class AddBookPanel extends JPanel {
     private JTextField titleField;
     private JTextField authorField;
     private JTextField isbnField;
-    private JTextField categoryField;
+    private JComboBox<String> categoryComboBox; ;
     private JSpinner totalCopiesSpinner;
     private JTextField filePathField;
     private JButton browseBtn;
@@ -80,12 +84,15 @@ public class AddBookPanel extends JPanel {
         formPanel.add(isbnField, gbc);
         row++;
 
-        // Category
+        // ✅ UPDATED: Category Dropdown from DB
+        //category
         gbc.gridx = 0; gbc.gridy = row;
-        formPanel.add(new JLabel("Category:"), gbc);
+        formPanel.add(new JLabel("📂 Category *:"), gbc);
         gbc.gridx = 1;
-        categoryField = new JTextField(25);
-        formPanel.add(categoryField, gbc);
+        categoryComboBox = new JComboBox<>();  // ✅ NEW JComboBox
+        categoryComboBox.setPreferredSize(new Dimension(200, 25));
+        loadCategories();  // ✅ Load from DB
+        formPanel.add(categoryComboBox, gbc);
         row++;
 
         // Total Copies
@@ -126,6 +133,30 @@ public class AddBookPanel extends JPanel {
 
         add(buttonPanel, BorderLayout.SOUTH);
     }
+    
+    
+    /**
+     * ✅ NEW: Load categories from book_category table
+     */
+    private void loadCategories() {
+        try {
+            List<String> categories = bookDAO.getActiveCategories();
+            String[] categoryArray = categories.toArray(new String[0]);
+            categoryComboBox.setModel(new DefaultComboBoxModel<>(categoryArray));
+        } catch (Exception e) {
+            // Fallback categories
+            String[] fallback = {"English", "Novel", "Engineering", "Maths", "Science", "Computer"};
+            categoryComboBox.setModel(new DefaultComboBoxModel<>(fallback));
+            System.err.println("Failed to load categories: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * ✅ UPDATED: Get selected category name from dropdown
+     */
+    private String getSelectedCategory() {
+        return (String) categoryComboBox.getSelectedItem();
+    }
 
     private void chooseFile() {
         JFileChooser chooser = new JFileChooser();
@@ -140,17 +171,19 @@ public class AddBookPanel extends JPanel {
         String title = titleField.getText().trim();
         String author = authorField.getText().trim();
         String isbn = isbnField.getText().trim();
-        String category = categoryField.getText().trim();
+        String category = getSelectedCategory();
         int totalCopies = (int) totalCopiesSpinner.getValue();
         String filePath = filePathField.getText().trim();
 
-        if (title.isEmpty() || author.isEmpty()) {
+     // ✅ Validation for category
+        if (title.isEmpty() || author.isEmpty() || category == null || "Select Category".equals(category)) {
             JOptionPane.showMessageDialog(this,
-                    "Title and Author are required.",
+                    "Title, Author, and Category are required.",
                     "Validation Error",
                     JOptionPane.WARNING_MESSAGE);
             return;
         }
+
 
         Book book = new Book();
         book.setTitle(title);
@@ -185,7 +218,7 @@ public class AddBookPanel extends JPanel {
         titleField.setText("");
         authorField.setText("");
         isbnField.setText("");
-        categoryField.setText("");
+        categoryComboBox.setSelectedIndex(0);  // ✅ Reset to first category
         totalCopiesSpinner.setValue(1);
         filePathField.setText("");
     }

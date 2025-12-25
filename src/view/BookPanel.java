@@ -175,12 +175,8 @@ public class BookPanel extends JPanel {
         add(southPanel, BorderLayout.SOUTH);
     }
     
-    
     /**
-     * ✅ NEW: Filter Panel with Search
-     */
-    /**
-     * ✅ UPDATED: Filter Panel with Search + Category
+     * ✅ Filter Panel with Search + Category
      */
     private JPanel createFilterPanel() {
         JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 8));
@@ -200,23 +196,48 @@ public class BookPanel extends JPanel {
         });
 
         // Category filter
+       
+     // ✅ DYNAMIC Category filter from DB
         JLabel categoryLabel = new JLabel("📂 Category: ");
-        String[] categories = {"All", "English", "Novel", "Engineering", "Maths", "Science", "History", "Computer", "Medical"};
-        JComboBox<String> categoryFilter = new JComboBox<>(categories);
+        categoryFilter = new JComboBox<>();  // Empty initially
         categoryFilter.addActionListener(e -> applyFilters());
+        loadCategoriesForFilter();  // ✅ Load from DB        
         this.categoryFilter = categoryFilter;  // ✅ Store reference
-
+ 
         filterPanel.add(searchLabel);
         filterPanel.add(searchField);
         filterPanel.add(categoryLabel);
         filterPanel.add(categoryFilter);
-
         return filterPanel;
+    }
+    
+    
+    /**
+     * ✅ NEW: Load categories from DB for filter dropdown
+     */
+    private void loadCategoriesForFilter() {
+        try {
+            List<String> categories = bookDAO.getActiveCategories();
+            categories.add(0, "All");  // Add "All" at top
+            
+            // Convert List to String array for JComboBox
+            String[] categoryArray = categories.toArray(new String[0]);
+            categoryFilter.setModel(new javax.swing.DefaultComboBoxModel<>(categoryArray));
+            
+        } catch (Exception e) {
+            // Fallback if DB error
+            String[] fallback = {"All", "English", "Novel", "Engineering", "Maths", "Science"};
+            categoryFilter.setModel(new javax.swing.DefaultComboBoxModel<>(fallback));
+            System.err.println("Category load failed: " + e.getMessage());
+        }
     }
 
     
     /**
      * ✅ NEW: Apply BOTH search + category filters
+     */
+    /**
+     * ✅ UPDATED: Apply search + category filters
      */
     private void applyFilters() {
         RowFilter<DefaultTableModel, Object> filter = null;
@@ -231,7 +252,7 @@ public class BookPanel extends JPanel {
         // 2. Category filter (column 4)
         String category = (String) categoryFilter.getSelectedItem();
         if (!"All".equals(category)) {
-            filters.add(RowFilter.regexFilter("(?i)" + category, 4));  // Column 4 = Category
+            filters.add(RowFilter.regexFilter("(?i)" + category, 4));  // Category column
         }
 
         // Combine filters
@@ -241,6 +262,7 @@ public class BookPanel extends JPanel {
 
         sorter.setRowFilter(filter);
     }
+
     
     /**
      * ✅ NEW: Apply search filter across ALL columns
@@ -260,12 +282,13 @@ public class BookPanel extends JPanel {
 
     private void loadCurrentPage() {
         searchField.setText("");           // Clear search
-        categoryFilter.setSelectedIndex(0); // Clear category (All)
-        applyFilters();                    // Apply cleared filters
+        if (categoryFilter != null) {
+            categoryFilter.setSelectedIndex(0);  // Select "All"
+        }
+        loadCategoriesForFilter();         // ✅ Reload categories from DB
+        applyFilters();
         loadPage(currentPage);
     }
-
-   
 
     /**
      * ✅ NEW: Clear search utility
@@ -524,21 +547,7 @@ public class BookPanel extends JPanel {
         // Restore sorting after data reload
         sorter.setSortKeys(currentSortKeys);
     }
-
-    /*
-    public void refreshData() {
-        int selectedRow = bookTable.getSelectedRow();
-        List<SortKey> currentSortKeys = (List<SortKey>) sorter.getSortKeys();
-        loadBooks();
-        
-        // Restore selection if possible
-        if (selectedRow >= 0 && selectedRow < bookTable.getRowCount()) {
-            bookTable.setRowSelectionInterval(selectedRow, selectedRow);
-        }
-        
-        sorter.setSortKeys(currentSortKeys);
-    }*/
-    
+   
     /**
      * ✅ Updated refreshData to preserve filters
      */

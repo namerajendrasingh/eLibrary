@@ -17,25 +17,37 @@ public class BookDAO {
     }
     // CREATE: add new book
     public boolean addBook(Book book) {
-        String sql = "INSERT INTO books (title, author, isbn, category, total_copies, available_copies, file_path) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?)";
-        try (Connection conn = getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            ps.setString(1, book.getTitle());
-            ps.setString(2, book.getAuthor());
-            ps.setString(3, book.getIsbn());
-            ps.setString(4, book.getCategory());
-            ps.setInt(5, book.getTotalCopies());
-            ps.setInt(6, book.getAvailableCopies());
-            ps.setString(7, book.getFilePath());
-
-            return ps.executeUpdate() == 1;
+        String sql = """
+            INSERT INTO books (title, author, isbn, category_id, total_copies, available_copies, file_path)
+            VALUES (?, ?, ?, (SELECT category_id FROM book_category WHERE category_name = ? AND status = true), ?, ?, ?)
+            """;
+        
+        try (PreparedStatement pstmt = DBUtil.getConnection().prepareStatement(sql, PreparedStatement.RETURN_GENERATED_KEYS)) {
+            pstmt.setString(1, book.getTitle());
+            pstmt.setString(2, book.getAuthor());
+            pstmt.setString(3, book.getIsbn());
+            pstmt.setString(4, book.getCategory());  // ✅ Find category_id by name
+            pstmt.setInt(5, book.getTotalCopies());
+            pstmt.setInt(6, book.getAvailableCopies());
+            pstmt.setString(7, book.getFilePath());
+            
+            int rows = pstmt.executeUpdate();
+            if (rows > 0) {
+                // Get generated ID
+                try (ResultSet rs = pstmt.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        book.setId(rs.getInt(1));
+                    }
+                }
+                return true;
+            }
+            return false;
         } catch (SQLException e) {
             e.printStackTrace();
             return false;
         }
     }
+
 
     // UPDATE: edit book details (not IDs)
     public boolean updateBook(Book book) {
@@ -270,32 +282,42 @@ public class BookDAO {
     
  // ✅ NEW PAGINATION METHODS
     public List<Book> getBooksWithOffset(int offset, int limit) {
-        List<Book> books = new ArrayList<>();
-        String sql = "SELECT id, title, author, isbn, category, total_copies, available_copies, file_path " +
-                    "FROM books ORDER BY id ASC LIMIT ? OFFSET ?";
+        String sql = """
+            SELECT b.id, b.title, b.author, b.isbn, 
+                   bc.category_name AS category, 
+                   b.total_copies, b.available_copies, b.file_path
+            FROM books b
+            LEFT JOIN book_category bc ON b.category_id = bc.category_id  -- ✅ LEFT JOIN
+            WHERE bc.status = true OR bc.status IS NULL  -- ✅ Active categories only
+            ORDER BY b.id ASC 
+            LIMIT ? OFFSET ?
+            """;
         
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+        try (PreparedStatement pstmt = DBUtil.getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, limit);
             pstmt.setInt(2, offset);
             try (ResultSet rs = pstmt.executeQuery()) {
+                List<Book> books = new ArrayList<>();
                 while (rs.next()) {
                     Book book = new Book();
                     book.setId(rs.getInt("id"));
                     book.setTitle(rs.getString("title"));
                     book.setAuthor(rs.getString("author"));
                     book.setIsbn(rs.getString("isbn"));
-                    book.setCategory(rs.getString("category"));
+                    book.setCategory(rs.getString("category"));  // ✅ From JOIN
                     book.setTotalCopies(rs.getInt("total_copies"));
                     book.setAvailableCopies(rs.getInt("available_copies"));
                     book.setFilePath(rs.getString("file_path"));
                     books.add(book);
                 }
+                return books;
             }
         } catch (SQLException e) {
             e.printStackTrace();
+            return new ArrayList<>();
         }
-        return books;
     }
+
     
     public int getTotalBookCount() {
         String sql = "SELECT COUNT(*) FROM books";
@@ -325,6 +347,33 @@ public class BookDAO {
         book.setAddedDate(rs.getTimestamp("added_date"));
         return book;
     }
+    /**
+     * ✅ NEW: Get active categories for dropdown filter
+     */
+    public List<String> getActiveCategories() {
+        String sql = """
+            SELECT category_name 
+            FROM book_category 
+            WHERE status = true 
+            ORDER BY category_name ASC
+        """;
+        
+        try (PreparedStatement pstmt = DBUtil.getConnection().prepareStatement(sql);
+             ResultSet rs = pstmt.executeQuery()) {
+            
+            List<String> categories = new ArrayList<>();
+            while (rs.next()) {
+                categories.add(rs.getString("category_name"));
+            }
+            return categories;
+            
+        } catch (SQLException e) {
+            e.printStackTrace();
+            // Return common categories as fallback
+            return List.of("English", "Novel", "Engineering", "Maths", "Science", "Computer");
+        }
+    }
+
     
     
 }
