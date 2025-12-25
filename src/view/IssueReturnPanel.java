@@ -9,10 +9,13 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -20,10 +23,14 @@ import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.RowFilter;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 
 import model.BookDAO;
 import model.BookIssue;
@@ -45,21 +52,30 @@ public class IssueReturnPanel extends JPanel {
     private final BookDAO bookDAO;
     private final BookIssueDAO issueDAO;
     private final UserDAO userDAO;
+    
+    
+ // ✅ NEW FILTER & PAGINATION FIELDS
+    private TableRowSorter<DefaultTableModel> sorter;
+    private JTextField searchField;
+    private JComboBox<String> statusFilter;
+    private JButton prevBtn, nextBtn;
+    private JLabel pageInfoLabel;
+    
+    // ✅ PAGINATION STATE
+    private int currentPage = 0;
+    private int pageSize = 25;
+    private int totalRecords = 0;
 
     public IssueReturnPanel() {
         this.bookDAO = new BookDAO();
         this.issueDAO = new BookIssueDAO();
         this.userDAO = new UserDAO();
         initUI();
-        loadActiveIssues();
+        loadPage(0);  // ✅ Start with pagination
+        //loadActiveIssues();
     }
-
-    private void initUI() {
-        setLayout(new BorderLayout(10, 10));
-        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-
-        // Top: Issue Form
-        
+    
+    private JPanel createIssuePanel() {  // ✅ EXTRACTED METHOD (called once)
         JPanel issuePanel = new JPanel(new GridBagLayout());
         issuePanel.setBorder(BorderFactory.createTitledBorder("Issue New Book"));
         ((TitledBorder)issuePanel.getBorder()).setTitleFont(new Font("Segoe UI", Font.BOLD, 14));
@@ -71,7 +87,6 @@ public class IssueReturnPanel extends JPanel {
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
         int row = 0;
-
         gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 1;
         issuePanel.add(new JLabel("User ID:"), gbc);
         gbc.gridx = 1;
@@ -102,9 +117,81 @@ public class IssueReturnPanel extends JPanel {
         issueBtn.addActionListener(e -> issueBook());
         issuePanel.add(issueBtn, gbc);
 
-        add(issuePanel, BorderLayout.NORTH);
+        return issuePanel;
+    }
 
-        // Center: Active Issues Table (for return)
+
+   private void initUI() {
+    setLayout(new BorderLayout(10, 10));
+    setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+
+    // ✅ 1. ISSUE PANEL (WEST - unchanged)
+    add(createIssuePanel(), BorderLayout.WEST);
+
+    // ✅ 2. MAIN CENTER PANEL (Filters + Table + Pagination)
+    JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+    
+    // TOP ROW: Filters + Pagination
+    JPanel topRowPanel = new JPanel(new BorderLayout(10, 0));
+    topRowPanel.add(createFilterPanel(), BorderLayout.WEST);      // Left: Search + Status
+    topRowPanel.add(createPaginationPanel(), BorderLayout.EAST);  // Right: Pagination
+    
+    mainPanel.add(topRowPanel, BorderLayout.NORTH);
+    
+    // CENTER: Table
+    setupActiveIssuesTable();
+    JScrollPane scrollPane = new JScrollPane(activeIssuesTable);
+    TitledBorder border = BorderFactory.createTitledBorder("Active Issued Books");
+    border.setTitleFont(new Font("Segoe UI", Font.BOLD, 14));
+    scrollPane.setBorder(border);
+    mainPanel.add(scrollPane, BorderLayout.CENTER);
+    
+    add(mainPanel, BorderLayout.CENTER);
+
+    // ✅ 3. ACTION BUTTONS (SOUTH - Return/Refresh only)
+    JPanel buttonPanel = createButtonPanel();
+    add(buttonPanel, BorderLayout.SOUTH);
+}
+
+    /**
+     * ✅ NEW: Filter Panel (Search + Status)
+     */
+    private JPanel createFilterPanel() {
+        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 8));
+        filterPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 15, 0));
+
+        // Global search
+        JLabel searchLabel = new JLabel("🔍 Search: ");
+        searchField = new JTextField(20);
+        searchField.addActionListener(e -> applyFilters());
+
+        // Debounce search (300ms)
+        Timer searchTimer = new Timer(300, e -> applyFilters());
+        searchTimer.setRepeats(false);
+        searchField.addActionListener(e -> {
+            searchTimer.stop();
+            searchTimer.start();
+        });
+
+        // Status filter
+        JLabel statusLabel = new JLabel("Status: ");
+        String[] statuses = {"All", "ISSUED", "OVERDUE"};
+        statusFilter = new JComboBox<>(statuses);
+        statusFilter.addActionListener(e -> applyFilters());
+
+        filterPanel.add(searchLabel);
+        filterPanel.add(searchField);
+        filterPanel.add(statusLabel);
+        filterPanel.add(statusFilter);
+
+        return filterPanel;
+    }
+    
+    
+    /**
+     * ✅ NEW: Table setup with sorting
+     */
+    private void setupActiveIssuesTable() {
         activeIssuesModel = new DefaultTableModel(
                 new Object[]{"Issue ID", "User ID", "Book ID", "Issue Date", "Due Date", "Status"},
                 0
@@ -114,65 +201,194 @@ public class IssueReturnPanel extends JPanel {
         };
 
         activeIssuesTable = new JTable(activeIssuesModel);
+        
+        // ✅ SORTING
+        sorter = new TableRowSorter<>(activeIssuesModel);
+        activeIssuesTable.setRowSorter(sorter);
+        setupColumnComparators();
+        sorter.setSortKeys(List.of(new javax.swing.RowSorter.SortKey(0, javax.swing.SortOrder.ASCENDING)));
+        
         activeIssuesTable.setRowHeight(28);
         activeIssuesTable.setGridColor(new java.awt.Color(230, 230, 230));
         activeIssuesTable.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
         activeIssuesTable.setShowGrid(true);
         activeIssuesTable.setIntercellSpacing(new Dimension(0, 1));
+        activeIssuesTable.getTableHeader().setReorderingAllowed(true);  // Enable sorting
 
-        // ✅ CENTER ALIGN COLUMNS (professional selective alignment)
+        // Column alignment & widths (unchanged)
         DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
         centerRenderer.setHorizontalAlignment(JLabel.CENTER);
-        
         DefaultTableCellRenderer leftRenderer = new DefaultTableCellRenderer();
         leftRenderer.setHorizontalAlignment(JLabel.LEFT);
 
+        int[] widths = {80, 80, 80, 130, 130, 100};
         for (int i = 0; i < activeIssuesTable.getColumnCount(); i++) {
-            switch (i) {
-                case 5: // Status → LEFT
-                    activeIssuesTable.getColumnModel().getColumn(i).setCellRenderer(leftRenderer);
-                    break;
-                default: // IDs, Dates → CENTER
-                    activeIssuesTable.getColumnModel().getColumn(i).setCellRenderer(centerRenderer);
+            activeIssuesTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
+            if (i == 5) { // Status → LEFT
+                activeIssuesTable.getColumnModel().getColumn(i).setCellRenderer(leftRenderer);
+            } else {
+                activeIssuesTable.getColumnModel().getColumn(i).setCellRenderer(centerRenderer);
             }
         }
 
-        // ✅ Professional header styling
-        activeIssuesTable.getTableHeader().setFont(new java.awt.Font("Segoe UI", java.awt.Font.BOLD, 12));
+        // Header styling
+        activeIssuesTable.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
         activeIssuesTable.getTableHeader().setBackground(new java.awt.Color(248, 249, 250));
         activeIssuesTable.getTableHeader().setForeground(new java.awt.Color(33, 33, 33));
-        activeIssuesTable.getTableHeader().setReorderingAllowed(false);
+    }
 
-        // Optimal column widths
-        activeIssuesTable.getColumnModel().getColumn(0).setPreferredWidth(80);  // Issue ID
-        activeIssuesTable.getColumnModel().getColumn(1).setPreferredWidth(80);  // User ID
-        activeIssuesTable.getColumnModel().getColumn(2).setPreferredWidth(80);  // Book ID
-        activeIssuesTable.getColumnModel().getColumn(3).setPreferredWidth(130); // Issue Date
-        activeIssuesTable.getColumnModel().getColumn(4).setPreferredWidth(130); // Due Date
-        activeIssuesTable.getColumnModel().getColumn(5).setPreferredWidth(100); // Status
+    /**
+     * ✅ NEW: Column comparators for sorting
+     */
+    private void setupColumnComparators() {
+        for (int i = 0; i < activeIssuesModel.getColumnCount(); i++) {
+            sorter.setComparator(i, createColumnComparator(i));
+        }
+    }
 
-        JScrollPane scrollPane = new JScrollPane(activeIssuesTable);
-        TitledBorder border = BorderFactory.createTitledBorder("Active Issued Books");
-        border.setTitleFont(new Font("Segoe UI", Font.BOLD, 14));
-        scrollPane.setBorder(border);
-        scrollPane.setPreferredSize(new Dimension(800, 400));
-        add(scrollPane, BorderLayout.CENTER);
-
+    private Comparator<Object> createColumnComparator(int columnIndex) {
+        return (o1, o2) -> {
+            return switch (columnIndex) {
+                case 0, 1, 2 -> { // IDs - Numeric
+                    int n1 = o1 instanceof Number ? ((Number) o1).intValue() : 0;
+                    int n2 = o2 instanceof Number ? ((Number) o2).intValue() : 0;
+                    yield Integer.compare(n1, n2);
+                }
+                case 3, 4 -> { // Dates - String (YYYY-MM-DD)
+                    String s1 = o1 != null ? o1.toString() : "";
+                    String s2 = o2 != null ? o2.toString() : "";
+                    yield s1.compareTo(s2);
+                }
+                case 5 -> { // Status
+                    String s1 = o1 != null ? o1.toString() : "";
+                    String s2 = o2 != null ? o2.toString() : "";
+                    yield s1.compareToIgnoreCase(s2);
+                }
+                default -> 0;
+            };
+        };
+    }
+    
+    /**
+     * ✅ NEW: Pagination panel
+     */
+    private JPanel createPaginationPanel() {
+        JPanel paginationPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        prevBtn = new JButton("⬅️ Previous");
+        nextBtn = new JButton("➡️ Next");
+        pageInfoLabel = new JLabel("Page 1 (1-20 of 0)");
         
+        prevBtn.setEnabled(false);
+        nextBtn.setEnabled(false);
+        prevBtn.addActionListener(e -> previousPage());
+        nextBtn.addActionListener(e -> nextPage());
+        
+        paginationPanel.add(prevBtn);
+        paginationPanel.add(pageInfoLabel);
+        paginationPanel.add(nextBtn);
+        return paginationPanel;
+    }
+    
+    
+    /**
+     * ✅ NEW: Apply filters (Search + Status)
+     */
+    private void applyFilters() {
+        RowFilter<DefaultTableModel, Object> filter = null;
+        List<RowFilter<Object,Object>> filters = new ArrayList<>();
 
-        // Bottom: Return / Refresh
-        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 10));
-        bottomPanel.setBorder(BorderFactory.createEmptyBorder(10, 0, 15, 0));
+        // Global search
+        String searchText = searchField.getText().toLowerCase().trim();
+        if (!searchText.isEmpty()) {
+            filters.add(RowFilter.regexFilter("(?i)" + searchText));
+        }
 
+        // Status filter (column 5)
+        String status = (String) statusFilter.getSelectedItem();
+        if (!"All".equals(status)) {
+            filters.add(RowFilter.regexFilter("(?i)" + status, 5));
+        }
+
+        if (!filters.isEmpty()) {
+            filter = RowFilter.andFilter(filters);
+        }
+        sorter.setRowFilter(filter);
+    }
+    
+    /**
+     * ✅ FIXED: Async pagination loading
+     */
+    private void loadPage(int page) {
+        currentPage = page;
+        
+        new Thread(() -> {
+            try {
+                List<BookIssue> issues = issueDAO.getActiveIssuesWithPagination(page * pageSize, pageSize);
+                totalRecords = issueDAO.getActiveIssuesCount();
+                
+                SwingUtilities.invokeLater(() -> {
+                    activeIssuesModel.setRowCount(0);
+                    for (BookIssue bi : issues) {
+                        activeIssuesModel.addRow(new Object[]{
+                                bi.getId(),
+                                bi.getUserId(),
+                                bi.getBookId(),
+                                formatDate(bi.getIssueDate()),
+                                formatDate(bi.getDueDate()),
+                                bi.getStatus() != null ? bi.getStatus() : "—"
+                        });
+                    }
+                    updatePaginationControls();
+                });
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> 
+                    JOptionPane.showMessageDialog(this, "Load failed: " + e.getMessage())
+                );
+            }
+        }).start();
+    }
+
+    private String formatDate(Timestamp ts) {
+        return ts != null ? ts.toString().split(" ")[0] : "—";
+    }
+
+    private void previousPage() {
+        if (currentPage > 0) loadPage(currentPage - 1);
+    }
+
+    private void nextPage() {
+        if ((currentPage + 1) * pageSize < totalRecords) loadPage(currentPage + 1);
+    }
+    
+    private void updatePaginationControls() {
+        int start = currentPage * pageSize + 1;
+        int end = Math.min(start + pageSize - 1, totalRecords);
+        pageInfoLabel.setText(String.format("Page %d (%d-%d of %d)", 
+            currentPage + 1, start, end, totalRecords));
+        prevBtn.setEnabled(currentPage > 0);
+        nextBtn.setEnabled((currentPage + 1) * pageSize < totalRecords);
+    }
+
+    private JPanel createButtonPanel() {
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 10));
         refreshBtn = new JButton("🔄 Refresh");
         returnBtn = new JButton("↩️ Return Selected");
-
-        refreshBtn.addActionListener(e -> loadActiveIssues());
+        
+        refreshBtn.addActionListener(e -> loadCurrentPage());
         returnBtn.addActionListener(e -> returnSelectedIssue());
+        
+        buttonPanel.add(refreshBtn);
+        buttonPanel.add(returnBtn);
+        return buttonPanel;
+    }
 
-        bottomPanel.add(refreshBtn);
-        bottomPanel.add(returnBtn);
-        add(bottomPanel, BorderLayout.SOUTH);
+    private void loadCurrentPage() {
+        searchField.setText("");
+        if (statusFilter != null && statusFilter.getItemCount() > 0) {
+            statusFilter.setSelectedIndex(0);
+        }
+        applyFilters();
+        loadPage(currentPage);
     }
 
     private void issueBook() {

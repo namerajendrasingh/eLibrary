@@ -172,5 +172,51 @@ public List<BookIssue> findByUser(int userId) {
 }
 
 
+public List<BookIssue> getActiveIssuesWithPagination(int offset, int limit) {
+    String sql = """
+        SELECT id, user_id, book_id, issue_date, due_date, status
+        FROM book_issues 
+        WHERE status = 'ISSUED' 
+        ORDER BY issue_date DESC 
+        LIMIT ? OFFSET ?
+    """;
+    try (Connection conn = DBUtil.getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setInt(1, limit);
+        pstmt.setInt(2, offset);
+        try (ResultSet rs = pstmt.executeQuery()) {
+            List<BookIssue> issues = new ArrayList<>();
+            while (rs.next()) {
+                BookIssue issue = new BookIssue();
+                issue.setId(rs.getInt("id"));
+                issue.setUserId(rs.getInt("user_id"));
+                issue.setBookId(rs.getInt("book_id"));
+                issue.setIssueDate(rs.getTimestamp("issue_date"));
+                issue.setDueDate(rs.getTimestamp("due_date"));
+                issue.setStatus(rs.getString("status"));
+                issues.add(issue);
+            }
+            return issues;
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+        return new ArrayList<>();
+    }
+}
+
+public int getActiveIssuesCount() {
+    String sql = "SELECT COUNT(*) FROM book_issues WHERE status = 'ISSUED'";
+    try (Connection conn = DBUtil.getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql);
+         ResultSet rs = pstmt.executeQuery()) {
+        return rs.next() ? rs.getInt(1) : 0;
+    } catch (SQLException e) {
+        e.printStackTrace();
+        return 0;
+    }
+}
+
+
+
 
 }
