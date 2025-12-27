@@ -297,6 +297,8 @@ public class UserManagementPanel extends JPanel {
 
     // ✅ EXISTING METHODS (unchanged)
     private void addUser() {
+    	JTextField firstNameField = new JTextField(15);
+    	JTextField lastNameField = new JTextField(15);
         JTextField usernameField = new JTextField(15);
         JTextField emailField = new JTextField(15);
         JPasswordField passwordField = new JPasswordField(15);
@@ -305,6 +307,10 @@ public class UserManagementPanel extends JPanel {
         JPanel panel = new JPanel(new GridLayout(0, 2, 10, 10));
         panel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
         
+        panel.add(new JLabel("👤 First Name:"));
+        panel.add(firstNameField);
+        panel.add(new JLabel("👤 Last Name"));
+        panel.add(lastNameField);
         panel.add(new JLabel("👤 Username:"));
         panel.add(usernameField);
         panel.add(new JLabel("📧 Email:"));
@@ -320,6 +326,8 @@ public class UserManagementPanel extends JPanel {
         );
 
         if (result == JOptionPane.OK_OPTION) {
+        	String firstName = firstNameField.getText().trim();
+        	String lastName =  lastNameField.getText().trim();
             String username = usernameField.getText().trim();
             String email = emailField.getText().trim();
             String password = new String(passwordField.getPassword()).trim();
@@ -330,7 +338,7 @@ public class UserManagementPanel extends JPanel {
                 return;
             }
 
-            User user = new User(username, password, email, role);
+            User user = new User(username, password, firstName,lastName, email, role);
             boolean ok = userDAO.register(user);
             if (ok) {
                 JOptionPane.showMessageDialog(this, "✅ User added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);

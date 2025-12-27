@@ -22,11 +22,11 @@ public class EmailConfig {
                 props.load(in);
                 String encUsername = props.getProperty("email.username");
                 if (encUsername != null && !encUsername.isEmpty()) {
-                	username = SimpleCrypto.decrypt(encUsername);
+                	username = EncryptionUtil.decrypt(encUsername);
                 }
                 String encPassword = props.getProperty("email.password");
                 if (encPassword != null && !encPassword.isEmpty()) {
-                    password = SimpleCrypto.decrypt(encPassword);
+                    password = EncryptionUtil.decrypt(encPassword);
                 }
             } else {
                 System.err.println("email.properties not found on classpath");

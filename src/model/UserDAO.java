@@ -28,21 +28,6 @@ public class UserDAO {
      }
  }
  
- public boolean register(User user) {
-     String sql = "INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)";
-     try (Connection conn = DBUtil.getConnection();
-          PreparedStatement pstmt = conn.prepareStatement(sql)) {
-         
-         pstmt.setString(1, user.getUsername());
-         pstmt.setString(2, hashPassword(user.getPassword()));
-         pstmt.setString(3, user.getEmail());
-         pstmt.setString(4, user.getRole());
-         return pstmt.executeUpdate() > 0;
-     } catch (SQLException e) {
-         e.printStackTrace();
-         return false;
-     }
- }
  
 //In model/UserDAO.java
 
@@ -230,5 +215,78 @@ public int getTotalUserCount() {
  return 0;
 }
 
+public boolean register(User user) {
+    // ✅ VALIDATE ROLE FIRST (Prevents DB constraint violation)
+	System.out.println("received user role ln220"+user.getRole());
+    if (!UserRole.isValid(user.getRole())) {
+        System.err.println("❌ Invalid role: " + user.getRole() + 
+                          " | Allowed: " + java.util.Arrays.toString(UserRole.values()));
+        return false;
+    }
+    
+    // ✅ VALIDATE USERNAME LENGTH (DB constraint)
+    if (user.getUsername().length() < 8 || user.getUsername().length() > 40) {
+        System.err.println("❌ Username length invalid: " + user.getUsername().length());
+        return false;
+    }
+    
+    String sql = """
+        INSERT INTO users (username, password, firstname, lastname, email, role) 
+        VALUES (?, ?, ?, ?, ?, ?) 
+        ON CONFLICT (username) DO NOTHING
+        RETURNING id
+    """;
+    
+    try (Connection conn = DBUtil.getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        
+        pstmt.setString(1, user.getUsername());
+        pstmt.setString(2, hashPassword(user.getPassword()));
+        pstmt.setString(3, user.getFirstname());
+        pstmt.setString(4, user.getLastname());
+        pstmt.setString(5, user.getEmail());
+        pstmt.setString(6, user.getRole());  // ✅ Now validated!
+        
+        try (ResultSet rs = pstmt.executeQuery()) {
+            boolean success = rs.next();  // ✅ Check RETURNING clause
+            if (success) {
+                System.out.println("✅ User registered: " + user.getUsername() + " (ID: " + rs.getInt("id") + ")");
+            }
+            return success;
+        }
+        
+    } catch (SQLException e) {
+        // ✅ BETTER ERROR MESSAGES
+        if (e.getMessage().contains("users_role_check")) {
+            System.err.println("❌ Role violation: '" + user.getRole() + "' not in [ADMIN, STAFF, GUEST]");
+        } else if (e.getMessage().contains("username_length")) {
+            System.err.println("❌ Username length violation: '" + user.getUsername() + "'");
+        } else if (e.getMessage().contains("unique_username")) {
+            System.err.println("❌ Username already exists: " + user.getUsername());
+        } else {
+            e.printStackTrace();
+        }
+        return false;
+    }
+}
+
+
+/**
+ * ✅ CHECK USERNAME AVAILABILITY (Real-time)
+ */
+public boolean isUsernameAvailable(String username) {
+    String sql = "SELECT COUNT(*) FROM users WHERE username = ?";
+    try (Connection conn = DBUtil.getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        pstmt.setString(1, username);
+        ResultSet rs = pstmt.executeQuery();
+        if (rs.next()) {
+            return rs.getInt(1) == 0;
+        }
+    } catch (SQLException e) {
+        e.printStackTrace();
+    }
+    return false;
+}
 
 }

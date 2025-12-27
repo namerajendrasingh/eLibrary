@@ -15,16 +15,16 @@ import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
 import javax.swing.JTextField;
 
 import controller.SignupController;
+import util.CommonMethods;
 
 public class SignupFrame extends JFrame {
 
-    private JTextField usernameField, emailField;
+    private JTextField firstNameField, lastNameField, usernameField, emailField;
     private JPasswordField passwordField, confirmPasswordField;
     private JComboBox<String> roleCombo;
     private JButton registerBtn, cancelBtn;
@@ -38,7 +38,7 @@ public class SignupFrame extends JFrame {
     private void initUI() {
         setTitle("eLibrary - Sign Up");
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setSize(520, 420);
+        setSize(520, 440);
         setLocationRelativeTo(null);
         setResizable(false);
 
@@ -93,7 +93,25 @@ public class SignupFrame extends JFrame {
         gbc.gridy = row;
         rightPanel.add(subtitleLabel, gbc);
         row++;
-
+        
+     // firstName
+        gbc.gridwidth = 1;
+        gbc.gridy = row; gbc.gridx = 0;
+        rightPanel.add(new JLabel("First Name *"), gbc);
+        gbc.gridx = 1;
+        firstNameField = new JTextField(18);
+        rightPanel.add(firstNameField, gbc);
+        row++;
+        
+     // lastName
+        gbc.gridwidth = 1;
+        gbc.gridy = row; gbc.gridx = 0;
+        rightPanel.add(new JLabel("Last Name *"), gbc);
+        gbc.gridx = 1;
+        lastNameField = new JTextField(18);
+        rightPanel.add(lastNameField, gbc);
+        row++;
+        
         // Username
         gbc.gridwidth = 1;
         gbc.gridy = row; gbc.gridx = 0;
@@ -179,6 +197,14 @@ public class SignupFrame extends JFrame {
     public String getRole() { return (String) roleCombo.getSelectedItem(); }
 
     public void showMessage(String msg) {
-        JOptionPane.showMessageDialog(this, msg);
+    	CommonMethods.showMessage(this, msg);
     }
+
+	public String getFirstname() {
+		return firstNameField.getText().trim();
+	}
+	public String getLastname() {
+		// TODO Auto-generated method stub
+		return lastNameField.getText().trim();
+	}
 }
