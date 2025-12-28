@@ -23,7 +23,7 @@ public void login() throws SQLException {
   String password = view.getPassword();
   String role     = view.getRole();
 
-  if (userDAO.login(username, password)) {
+  if (userDAO.login(username, password,role)) {
       // Get full user with id, role, email
       User user = userDAO.findByUsername(username); // implement this in UserDAO
       view.openDashboard(user);                     // ✅ pass User, not String

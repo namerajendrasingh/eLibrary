@@ -14,12 +14,12 @@ import util.DBUtil;
 public class UserDAO {  
  
 	
-	public boolean login(String username, String password) {
+	public boolean login(String username, String password, String role) {
 	    // ✅ SQL LOWER() for case-insensitive username matching
 	    String sql = """
 	        SELECT * from users 
 	        WHERE LOWER(username) = LOWER(?) 
-	        AND password = ?
+	        AND password = ? and role = ?
 	        """;
 	    
 	    try (Connection conn = DBUtil.getConnection();
@@ -27,6 +27,7 @@ public class UserDAO {
 	        
 	        pstmt.setString(1, username.trim());           // ✅ Case-insensitive
 	        pstmt.setString(2, hashPassword(password));    // ✅ Password hash
+	        pstmt.setString(3, role.trim());
 	        
 	        try (ResultSet rs = pstmt.executeQuery()) {
 	            return rs.next();  // ✅ Returns true if user found
