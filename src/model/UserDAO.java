@@ -12,21 +12,32 @@ import java.util.List;
 
 import util.DBUtil;
 public class UserDAO {  
- public boolean login(String username, String password) {
-     String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
-     try (Connection conn = DBUtil.getConnection();
-          PreparedStatement pstmt = conn.prepareStatement(sql)) {
-         
-         pstmt.setString(1, username);
-         pstmt.setString(2, hashPassword(password));
-         
-         ResultSet rs = pstmt.executeQuery();
-         return rs.next();
-     } catch (SQLException e) {
-         e.printStackTrace();
-         return false;
-     }
- }
+ 
+	
+	public boolean login(String username, String password) {
+	    // ✅ SQL LOWER() for case-insensitive username matching
+	    String sql = """
+	        SELECT * from users 
+	        WHERE LOWER(username) = LOWER(?) 
+	        AND password = ?
+	        """;
+	    
+	    try (Connection conn = DBUtil.getConnection();
+	         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+	        
+	        pstmt.setString(1, username.trim());           // ✅ Case-insensitive
+	        pstmt.setString(2, hashPassword(password));    // ✅ Password hash
+	        
+	        try (ResultSet rs = pstmt.executeQuery()) {
+	            return rs.next();  // ✅ Returns true if user found
+	        }
+	        
+	    } catch (SQLException e) {
+	        e.printStackTrace();
+	        return false;
+	    }
+	}
+
  
  
 //In model/UserDAO.java
@@ -120,7 +131,7 @@ public User findById(int id) {
 }
 
 public User findByUsername(String username) {
-    String sql = "SELECT * FROM users WHERE username = ?";
+    String sql = "SELECT * FROM users WHERE LOWER(username) = LOWER(?)";
     try (Connection conn = DBUtil.getConnection();
          PreparedStatement ps = conn.prepareStatement(sql)) {
 
@@ -275,7 +286,7 @@ public boolean register(User user) {
  * ✅ CHECK USERNAME AVAILABILITY (Real-time)
  */
 public boolean isUsernameAvailable(String username) {
-    String sql = "SELECT COUNT(*) FROM users WHERE username = ?";
+    String sql = "SELECT COUNT(*) FROM users WHERE LOWER(username) = LOWER(?)";
     try (Connection conn = DBUtil.getConnection();
          PreparedStatement pstmt = conn.prepareStatement(sql)) {
         pstmt.setString(1, username);
