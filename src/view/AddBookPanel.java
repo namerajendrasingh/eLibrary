@@ -22,6 +22,7 @@ import javax.swing.SpinnerNumberModel;
 
 import model.Book;
 import model.BookDAO;
+import util.CommonMethods;
 
 public class AddBookPanel extends JPanel {
 
@@ -181,6 +182,7 @@ public class AddBookPanel extends JPanel {
                     "Title, Author, and Category are required.",
                     "Validation Error",
                     JOptionPane.WARNING_MESSAGE);
+            
             return;
         }
 
@@ -203,14 +205,11 @@ public class AddBookPanel extends JPanel {
         }
 
         if (ok) {
-            JOptionPane.showMessageDialog(this, "Book added successfully!");
+            CommonMethods.showMessage(this, "Book added successfully!");
             clearForm();
             onBookSaved();                // *** NEW: notify parent so it can refresh table or close dialog
         } else {
-            JOptionPane.showMessageDialog(this,
-                    "Failed to add book. Check console/logs.",
-                    "Error",
-                    JOptionPane.ERROR_MESSAGE);
+        	CommonMethods.showError(this,"Failed to add book. Check console/logs.");
         }
     }
 
