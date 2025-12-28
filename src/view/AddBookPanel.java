@@ -178,11 +178,7 @@ public class AddBookPanel extends JPanel {
 
      // ✅ Validation for category
         if (title.isEmpty() || author.isEmpty() || category == null || "Select Category".equals(category)) {
-            JOptionPane.showMessageDialog(this,
-                    "Title, Author, and Category are required.",
-                    "Validation Error",
-                    JOptionPane.WARNING_MESSAGE);
-            
+        	CommonMethods.showWarning(this,"Title, Author, and Category are required.");
             return;
         }
 

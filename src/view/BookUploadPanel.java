@@ -19,6 +19,7 @@ import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.border.TitledBorder;
 
+import util.CommonMethods;
 import util.PDFUploadUtility;
 
 public class BookUploadPanel extends JPanel {
@@ -116,15 +117,13 @@ public class BookUploadPanel extends JPanel {
             "3️⃣ Browse & Select PDF File\n"+
             "4️⃣ Click UPLOAD ✅\n"+
             
-            "📁 Files saved automatically:\n"+
-            "• D:\\LibraryPDF\\English\\English_BookTitle.pdf\n"+
+            "📁 Files saved automatically: in \n"+
+            "•eg. D:\\LibraryPDF\\English\\English_BookTitle.pdf\n"+
             "• D:\\LibraryPDF\\Engineering\\Engineering_Java.pdf\n"+
             
             "🔗 After upload, go to Books tab to add DB record\n"+
             
-            "📂 Categories Available:\n"+
-            "• English, Novel, Engineering, Maths, Science\n"+
-            "• History, Computer, Medical";
+            "📂 More Than 90+ Book Categories Available:\n";
         
         JTextArea textArea = new JTextArea(instructions);
         textArea.setEditable(false);
@@ -141,10 +140,10 @@ public class BookUploadPanel extends JPanel {
             SwingUtilities.getWindowAncestor(this),
             e -> {
                 tabbedPane.setSelectedIndex(1); // Switch to Instructions
-                JOptionPane.showMessageDialog(this, 
-                    "✅ PDF uploaded successfully!\n\n" +
-                    "👉 Now go to Books tab to add record", 
-                    "Upload Complete", JOptionPane.INFORMATION_MESSAGE);
+                CommonMethods.showMessage(this, "\"✅ PDF uploaded successfully!\\n\\n\" +\r\n"
+                		+ "                    \"👉 Now go to Books tab to add record\", \r\n"
+                		+ "                    \"Upload Complete\"");
+               
             }
         );
         uploadDialog.setVisible(true);
@@ -155,9 +154,8 @@ public class BookUploadPanel extends JPanel {
             SwingUtilities.getWindowAncestor(this),
             e -> {
                 int uploadedCount = Integer.parseInt(e.getActionCommand());
-                JOptionPane.showMessageDialog(this, 
-                    String.format("✅ Bulk Upload Complete!\n📊 %d PDFs uploaded successfully!\n\n👉 Go to Books tab to add records", uploadedCount),
-                    "Bulk Upload Success", JOptionPane.INFORMATION_MESSAGE);
+                CommonMethods.showMessage(this, 
+                    String.format("✅ Bulk Upload Complete!\n📊 %d PDFs uploaded successfully!\n\n👉 Go to Books tab to add records", uploadedCount));
             }
         );
         bulkDialog.setVisible(true);
