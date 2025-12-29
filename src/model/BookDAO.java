@@ -373,6 +373,61 @@ public class BookDAO {
             return List.of("English", "Novel", "Engineering", "Maths", "Science", "Computer");
         }
     }
+    public List<Book> searchByTitle(String title) {
+        List<Book> books = new ArrayList<>();
+        String sql = "SELECT id, title, author, isbn, total_copies, available_copies " +
+                    "FROM books WHERE LOWER(title) LIKE LOWER(?) LIMIT 10";
+        
+        try (Connection conn = DBUtil.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setString(1, title + "%");
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    Book book = new Book();
+                    book.setId(rs.getInt("id"));
+                    book.setTitle(rs.getString("title"));
+                    book.setAuthor(rs.getString("author"));
+                    book.setIsbn(rs.getString("isbn"));
+                    book.setTotalCopies(rs.getInt("total_copies"));
+                    book.setAvailableCopies(rs.getInt("available_copies"));
+                    books.add(book);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error searching books: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return books;
+    }
+	
+    public Book findById(int id) {
+        String sql = "SELECT id, title, author, isbn, total_copies, available_copies " +
+                    "FROM books WHERE id = ?";
+        
+        try (Connection conn = DBUtil.getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            
+            pstmt.setInt(1, id);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    Book book = new Book();
+                    book.setId(rs.getInt("id"));
+                    book.setTitle(rs.getString("title"));
+                    book.setAuthor(rs.getString("author"));
+                    book.setIsbn(rs.getString("isbn"));
+                    book.setTotalCopies(rs.getInt("total_copies"));
+                    book.setAvailableCopies(rs.getInt("available_copies"));
+            
+                    return book;
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error finding book by ID: " + e.getMessage());
+            e.printStackTrace();
+        }
+        return null;
+    }
 
     
     

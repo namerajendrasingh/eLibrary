@@ -216,6 +216,36 @@ public int getActiveIssuesCount() {
     }
 }
 
+public BookIssue findById(int id) {
+    String sql = "SELECT id, user_id, book_id, issue_date, due_date, return_date, status, fine_amount " +
+                "FROM book_issues WHERE id = ?";
+    
+    try (Connection conn = DBUtil.getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        
+        pstmt.setInt(1, id);
+        try (ResultSet rs = pstmt.executeQuery()) {
+            if (rs.next()) {
+                BookIssue issue = new BookIssue();
+                issue.setId(rs.getInt("id"));
+                issue.setUserId(rs.getInt("user_id"));
+                issue.setBookId(rs.getInt("book_id"));
+                issue.setIssueDate(rs.getTimestamp("issue_date"));
+                issue.setDueDate(rs.getTimestamp("due_date"));
+                issue.setReturnDate(rs.getTimestamp("return_date"));
+                issue.setStatus(rs.getString("status"));
+               // issue.setFineAmount(rs.getBigDecimal("fine_amount"));
+                return issue;
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("Error finding book issue by ID: " + e.getMessage());
+        e.printStackTrace();
+    }
+    return null;
+}
+
+
 
 
 

@@ -301,4 +301,33 @@ public boolean isUsernameAvailable(String username) {
     return false;
 }
 
+
+
+public List<User> searchByName(String name) {
+    List<User> users = new ArrayList<>();
+    String sql = "SELECT id, firstname, lastname, username, email FROM users WHERE LOWER(username) LIKE LOWER(?) LIMIT 10";
+    
+    try (Connection conn = DBUtil.getConnection();
+         PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        
+        pstmt.setString(1, name + "%");
+        try (ResultSet rs = pstmt.executeQuery()) {
+            while (rs.next()) {
+                User user = new User();
+                user.setId(rs.getInt("id"));
+                user.setUsername(rs.getString("username"));
+                user.setEmail(rs.getString("email"));
+                user.setFirstname(rs.getString("firstname"));
+                user.setLastname(rs.getString("lastname"));
+                users.add(user);
+            }
+        }
+    } catch (SQLException e) {
+        System.err.println("Error searching users: " + e.getMessage());
+        e.printStackTrace();
+    }
+    return users;
+}
+
+
 }
