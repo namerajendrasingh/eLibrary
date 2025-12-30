@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -31,13 +32,19 @@ import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
 import javax.swing.RowFilter;
+import javax.swing.RowSorter;
+import javax.swing.SortOrder;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.SwingWorker;
 import javax.swing.Timer;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableColumn;
 import javax.swing.table.TableRowSorter;
 
 import model.Book;
@@ -46,754 +53,559 @@ import model.BookIssue;
 import model.BookIssueDAO;
 import model.User;
 import model.UserDAO;
+import util.CommonMethods;
 
 public class IssueReturnPanel extends JPanel {
-
-    private JTextField userSearchField;
-    private JTextField bookSearchField;
-    private JSpinner dueDateDaysSpinner;
-    private JButton issueBtn;
-    private JLabel selectedUserLabel;
-    private JLabel selectedBookLabel;
     
-    private int selectedUserId = -1;
-    private int selectedBookId = -1;
-
-    private JTable activeIssuesTable;
-    private DefaultTableModel activeIssuesModel;
-    private JButton returnBtn, refreshBtn;
-
-    private final BookDAO bookDAO;
-    private final BookIssueDAO issueDAO;
-    private final UserDAO userDAO;
+    // Constants
+    private static final int PAGE_SIZE = 25;
+    private static final int DEBOUNCE_MS = 500;
+    private static final String[] STATUSES = {"All", "ISSUED", "OVERDUE"};
+    private static final String[] TABLE_COLS = {"Issue ID", "Username", "Book Title", "Issue Date", "Due Date", "Status"};
     
-    // ✅ NEW FILTER & PAGINATION FIELDS
+    // State
+    private int selectedUserId = -1, selectedBookId = -1, currentPage = 0, totalRecords = 0;
+    private final BookDAO bookDAO = new BookDAO();
+    private final BookIssueDAO issueDAO = new BookIssueDAO();
+    private final UserDAO userDAO = new UserDAO();
+    
+    // UI Components
+    private final JTextField userSearchField = new JTextField(14);
+    private final JTextField bookSearchField = new JTextField(14);
+    private final JSpinner dueDateDaysSpinner = createSpinner();
+    private final JLabel selectedUserLabel = new JLabel("👤 No user selected");
+    private final JLabel selectedBookLabel = new JLabel("📖 No book selected");
+    private final JTable activeIssuesTable = new JTable();
+    private final DefaultTableModel activeIssuesModel = new DefaultTableModel(TABLE_COLS, 0);
     private TableRowSorter<DefaultTableModel> sorter;
+    
+    // Filter/Pagination
     private JTextField searchField;
     private JComboBox<String> statusFilter;
-    private JButton prevBtn, nextBtn;
+    private JButton prevBtn, nextBtn, refreshBtn, returnBtn;
     private JLabel pageInfoLabel;
-    
-    // ✅ PAGINATION STATE
-    private int currentPage = 0;
-    private int pageSize = 25;
-    private int totalRecords = 0;
-    
-    private boolean suppressUserSearch = false;
-    private boolean suppressBookSearch = false;
-
-
+    private boolean suppressSearch = false;
 
     public IssueReturnPanel() {
-        this.bookDAO = new BookDAO();
-        this.issueDAO = new BookIssueDAO();
-        this.userDAO = new UserDAO();
+        activeIssuesModel.setColumnIdentifiers(TABLE_COLS);
+        activeIssuesModel.setNumRows(0);
         initUI();
         loadPage(0);
     }
     
-    private JPanel createIssuePanel() {
-        JPanel issuePanel = new JPanel(new BorderLayout());
+    private void initUI() {
+        setLayout(new BorderLayout(10, 10));
+        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
         
-        JPanel contentPanel = new JPanel(new GridBagLayout());
-        contentPanel.setBorder(BorderFactory.createTitledBorder("Issue New Book"));
-        ((TitledBorder)contentPanel.getBorder()).setTitleFont(new Font("Segoe UI", Font.BOLD, 14));
-        contentPanel.setPreferredSize(new Dimension(360, 350));  // Slightly wider for better UX
+        add(createIssuePanel(), BorderLayout.WEST);
+        add(createIssuesPanel(), BorderLayout.CENTER);
+    }
+
+    private JPanel createIssuePanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(createTitledBorder("Issue New Book"));
+        panel.setPreferredSize(new Dimension(360, 350));
         
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.insets = new Insets(12, 15, 12, 15);
         gbc.anchor = GridBagConstraints.WEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
-
+        
         int row = 0;
         
-        // ✨ MODERN USER CARD
+        // User card
         gbc.gridx = 0; gbc.gridy = row++; gbc.gridwidth = 2;
-        contentPanel.add(createModernUserSection(), gbc);
-
-        // ✨ MODERN BOOK CARD  
+        panel.add(createSelectionCard("👤 Select User", userSearchField, selectedUserLabel, this::searchUsers), gbc);
+        
+        // Book card
         gbc.gridy = row++;
-        contentPanel.add(createModernBookSection(), gbc);
-
-        // Due Days (unchanged)
+        panel.add(createSelectionCard("📚 Select Book", bookSearchField, selectedBookLabel, this::searchBooks), gbc);
+        
+        // Due days
         gbc.gridy = row++; gbc.gridx = 0; gbc.gridwidth = 1;
-        contentPanel.add(new JLabel("📅 Due (days):"), gbc);
+        panel.add(new JLabel("📅 Due (days):"), gbc);
         gbc.gridx = 1;
-        dueDateDaysSpinner = new JSpinner(new SpinnerNumberModel(14, 1, 365, 1));
-        ((JSpinner.DefaultEditor) dueDateDaysSpinner.getEditor()).getTextField().setColumns(8);
-        dueDateDaysSpinner.setPreferredSize(new Dimension(140, 34));
-        dueDateDaysSpinner.setBorder(BorderFactory.createLineBorder(new Color(220, 220, 220)));
-        contentPanel.add(dueDateDaysSpinner, gbc);
-
-        // ✨ HERO ISSUE BUTTON
+        panel.add(dueDateDaysSpinner, gbc);
+        
+        // Issue button
         gbc.gridx = 0; gbc.gridy = row++; gbc.gridwidth = 2;
         gbc.insets = new Insets(20, 15, 15, 15);
         gbc.anchor = GridBagConstraints.CENTER;
-        issueBtn = new JButton("✅ Issue Book");
-        issueBtn.setPreferredSize(new Dimension(150, 42));
-        issueBtn.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        issueBtn.setBackground(new Color(46, 125, 50));  // Green
-        issueBtn.setForeground(Color.WHITE);
-        issueBtn.setFocusPainted(false);
-        issueBtn.setBorder(BorderFactory.createEmptyBorder(12, 24, 12, 24));
-        issueBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        // Hover effect
-        issueBtn.addMouseListener(new MouseAdapter() {
-            public void mouseEntered(MouseEvent e) { 
-                issueBtn.setBackground(new Color(67, 160, 71)); 
-            }
-            public void mouseExited(MouseEvent e) { 
-                issueBtn.setBackground(new Color(46, 125, 50)); 
-            }
-        });
-        issueBtn.addActionListener(e -> issueBook());
-        contentPanel.add(issueBtn, gbc);
-
-        issuePanel.add(contentPanel, BorderLayout.CENTER);
-        return issuePanel;
+        panel.add(createIssueButton(), gbc);
+        
+        return wrapCenter(panel);
     }
+
     
-    // ✨ NEW: Modern User Selection Card
-   private JPanel createModernUserSection() {
-
-    JPanel userCard = new JPanel(new BorderLayout(12, 8));
-    userCard.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true),
+    private JPanel createSelectionCard(String title, JTextField field, JLabel label, Runnable onSearch) {
+        JPanel card = new JPanel(new BorderLayout(12, 8));
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(Color.LIGHT_GRAY), 
             BorderFactory.createEmptyBorder(12, 12, 12, 12)
-    ));
-    userCard.setBackground(Color.WHITE);
-
-    JLabel title = new JLabel("👤 Select User");
-    title.setFont(new Font("Segoe UI", Font.BOLD, 13));
-    title.setForeground(new Color(55, 71, 79));
-    userCard.add(title, BorderLayout.NORTH);
-
-    JPanel inputPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-
-    userSearchField = new JTextField(14);
-    userSearchField.setPreferredSize(new Dimension(155, 36));
-    userSearchField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-    userSearchField.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
+        ));
+        card.setBackground(Color.WHITE);
+        
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        titleLabel.setForeground(new Color(55, 71, 79));
+        card.add(titleLabel, BorderLayout.NORTH);
+        
+        JPanel inputPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        field.setPreferredSize(new Dimension(155, 36));
+        field.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        field.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(Color.LIGHT_GRAY),
             BorderFactory.createEmptyBorder(10, 14, 10, 14)
-    ));
-
-    // 🔑 DEBOUNCE TIMER (FIXED)
-    Timer userTimer = new Timer(500, e -> {
-        if (!suppressUserSearch) {
-            searchUsers();
-        }
-    });
-    userTimer.setRepeats(false);
-
-    userSearchField.getDocument().addDocumentListener(
-            new javax.swing.event.DocumentListener() {
-                @Override
-                public void insertUpdate(javax.swing.event.DocumentEvent e) {
-                    if (!suppressUserSearch) userTimer.restart();
-                }
-
-                @Override
-                public void removeUpdate(javax.swing.event.DocumentEvent e) {
-                    if (!suppressUserSearch) userTimer.restart();
-                }
-
-                @Override
-                public void changedUpdate(javax.swing.event.DocumentEvent e) {
-                    if (!suppressUserSearch) userTimer.restart();
-                }
-            }
-    );
-
-    inputPanel.add(userSearchField);
-    userCard.add(inputPanel, BorderLayout.CENTER);
-
-    selectedUserLabel = new JLabel("👤 No user selected");
-    selectedUserLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
-    selectedUserLabel.setForeground(new Color(117, 117, 117));
-    selectedUserLabel.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-    userCard.add(selectedUserLabel, BorderLayout.SOUTH);
-
-    return userCard;
-}
-
-
-   private JPanel createModernBookSection() {
-
-    JPanel bookCard = new JPanel(new BorderLayout(12, 8));
-    bookCard.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200), 1, true),
-            BorderFactory.createEmptyBorder(12, 12, 12, 12)
-    ));
-    bookCard.setBackground(Color.WHITE);
-
-    JLabel title = new JLabel("📚 Select Book");
-    title.setFont(new Font("Segoe UI", Font.BOLD, 13));
-    title.setForeground(new Color(55, 71, 79));
-    bookCard.add(title, BorderLayout.NORTH);
-
-    JPanel inputPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-
-    bookSearchField = new JTextField(14);
-    bookSearchField.setPreferredSize(new Dimension(155, 36));
-    bookSearchField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-    bookSearchField.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(200, 200, 200), 1),
-            BorderFactory.createEmptyBorder(10, 14, 10, 14)
-    ));
-
-    // 🔑 DEBOUNCE TIMER (FIXED)
-    Timer bookTimer = new Timer(500, e -> {
-        if (!suppressBookSearch) {
-            searchBooks();
-        }
-    });
-    bookTimer.setRepeats(false);
-
-    bookSearchField.getDocument().addDocumentListener(
-            new javax.swing.event.DocumentListener() {
-                @Override
-                public void insertUpdate(javax.swing.event.DocumentEvent e) {
-                    if (!suppressBookSearch) bookTimer.restart();
-                }
-
-                @Override
-                public void removeUpdate(javax.swing.event.DocumentEvent e) {
-                    if (!suppressBookSearch) bookTimer.restart();
-                }
-
-                @Override
-                public void changedUpdate(javax.swing.event.DocumentEvent e) {
-                    if (!suppressBookSearch) bookTimer.restart();
-                }
-            }
-    );
-
-    inputPanel.add(bookSearchField);
-    bookCard.add(inputPanel, BorderLayout.CENTER);
-
-    selectedBookLabel = new JLabel("📖 No book selected");
-    selectedBookLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
-    selectedBookLabel.setForeground(new Color(117, 117, 117));
-    selectedBookLabel.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
-    bookCard.add(selectedBookLabel, BorderLayout.SOUTH);
-
-    return bookCard;
-}
-
-    private User showUserSelectionDialog(List<User> users) {
-        final User[] selectedUser = { null };
-
-        JDialog dialog = new JDialog(
-                (Frame) SwingUtilities.getWindowAncestor(this),
-                "Select User",
-                true
-        );
-        dialog.setSize(450, 300);
-        dialog.setLocationRelativeTo(this);
-
-        String[] cols = {"Username", "ID", "Email"};
-        DefaultTableModel model = new DefaultTableModel(cols, 0) {
-            public boolean isCellEditable(int r, int c) { return false; }
-        };
-
-        users.forEach(u ->
-            model.addRow(new Object[]{u.getUsername(), u.getId(), u.getEmail()})
-        );
-
-        JTable table = new JTable(model);
-        table.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-
-        Runnable selectAction = () -> {
-            int viewRow = table.getSelectedRow();
-            if (viewRow >= 0) {
-                int modelRow = table.convertRowIndexToModel(viewRow);
-                int id = (Integer) model.getValueAt(modelRow, 1);
-                selectedUser[0] = users.stream()
-                        .filter(u -> u.getId() == id)
-                        .findFirst()
-                        .orElse(null);
-                dialog.dispose();
-            }
-        };
-
-        table.addMouseListener(new MouseAdapter() {
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) selectAction.run();
-            }
-        });
-
-        table.addKeyListener(new KeyAdapter() {
-            public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ENTER) selectAction.run();
-            }
-        });
-
-        JButton selectBtn = new JButton("Select");
-        selectBtn.addActionListener(e -> selectAction.run());
-
-        dialog.add(new JScrollPane(table), BorderLayout.CENTER);
-        dialog.add(selectBtn, BorderLayout.SOUTH);
-        dialog.setVisible(true);
-
-        return selectedUser[0];
+        ));
+        field.setCaretColor(Color.BLUE);
+        
+        setupDebounce(field, DEBOUNCE_MS, onSearch);
+        
+        inputPanel.add(field);
+        inputPanel.add(createSearchButton("🔍", onSearch));
+        card.add(inputPanel, BorderLayout.CENTER);
+        label.setFont(new Font("Segoe UI", Font.ITALIC, 12));
+        label.setForeground(new Color(117, 117, 117));
+        label.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
+        card.add(label, BorderLayout.SOUTH);
+        
+        return card;
     }
 
+    private JButton createSearchButton(String icon, Runnable onClick) {
+        return new JButton(icon) {{
+            setPreferredSize(new Dimension(85, 36));
+            setFont(new Font("Segoe UI", Font.BOLD, 12));
+            setBackground(new Color(33, 150, 243));
+            setForeground(Color.WHITE);
+            setFocusPainted(false);
+            setBorder(BorderFactory.createEmptyBorder(10, 16, 10, 16));
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            addActionListener(e -> onClick.run());
+        }};
+    }
 
-    private Book showBookSelectionDialog(List<Book> books) {
-        final Book[] selectedBook = { null };
+    private JButton createIssueButton() {
+        return new JButton("✅ Issue Book") {{
+            setPreferredSize(new Dimension(150, 42));
+            setFont(new Font("Segoe UI", Font.BOLD, 14));
+            setBackground(new Color(46, 125, 50));
+            setForeground(Color.WHITE);
+            setFocusPainted(false);
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            addMouseListener(new MouseAdapter() {
+                public void mouseEntered(MouseEvent e) { setBackground(new Color(67, 160, 71)); }
+                public void mouseExited(MouseEvent e) { setBackground(new Color(46, 125, 50)); }
+            });
+            addActionListener(e -> IssueReturnPanel.this.issueBook());
+        }};
+    }
 
-        JDialog dialog = new JDialog(
-                (Frame) SwingUtilities.getWindowAncestor(this),
-                "Select Book",
-                true
-        );
-        dialog.setSize(500, 300);
+    private void setupDebounce(JTextField field, int delay, Runnable action) {
+        Timer timer = new Timer(delay, e -> {
+            if (!suppressSearch) action.run();
+            ((Timer)e.getSource()).stop();
+        });
+        timer.setRepeats(false);
+        
+        field.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { if (!suppressSearch) timer.restart(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { if (!suppressSearch) timer.restart(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { if (!suppressSearch) timer.restart(); }
+        });
+    }
+
+    private <T> T showSelectionDialog(String title, List<T> items, int idCol, Function<T, Integer> idGetter, Function<T, String> nameGetter) {
+        final T[] selected = (T[]) new Object[1];
+        
+        JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), title, true);
+        dialog.setSize(title.contains("User") ? 450 : 500, 300);
         dialog.setLocationRelativeTo(this);
-
-        String[] cols = {"Title", "Author", "ID", "Available"};
-        DefaultTableModel model = new DefaultTableModel(cols, 0) {
-            public boolean isCellEditable(int r, int c) { return false; }
-        };
-
-        books.forEach(b ->
-            model.addRow(new Object[]{
-                    b.getTitle(),
-                    b.getAuthor(),
-                    b.getId(),
-                    b.getAvailableCopies()
-            })
-        );
-
-        JTable table = new JTable(model);
-        table.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-
+        
+        String[] cols = title.contains("User") ? 
+            new String[]{"Username", "ID", "Email"} : 
+            new String[]{"Title", "Author", "ID", "Available"};
+            
+        DefaultTableModel model = new DefaultTableModel(cols, 0) {{
+            setNumRows(0);
+            for (T item : items) {
+                if (item instanceof User u) {
+                    addRow(new Object[]{u.getUsername(), u.getId(), u.getEmail()});
+                } else if (item instanceof Book b) {
+                    addRow(new Object[]{b.getTitle(), b.getAuthor(), b.getId(), b.getAvailableCopies()});
+                }
+            }
+        }};
+        
+        JTable table = new JTable(model) {{
+            setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            getTableHeader().setReorderingAllowed(false);
+            setRowHeight(28);
+        }};
+        
         Runnable selectAction = () -> {
-            int viewRow = table.getSelectedRow();
-            if (viewRow >= 0) {
-                int modelRow = table.convertRowIndexToModel(viewRow);
-                int id = (Integer) model.getValueAt(modelRow, 2);
-                selectedBook[0] = books.stream()
-                        .filter(b -> b.getId() == id)
-                        .findFirst()
-                        .orElse(null);
+            int row = table.getSelectedRow();
+            if (row >= 0) {
+                int modelRow = table.convertRowIndexToModel(row);
+                int id = (Integer) model.getValueAt(modelRow, idCol);
+                selected[0] = items.stream().filter(i -> idGetter.apply((T) i).equals(id)).findFirst().orElse(null);
                 dialog.dispose();
             }
         };
-
+        
         table.addMouseListener(new MouseAdapter() {
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) selectAction.run();
-            }
+            public void mouseClicked(MouseEvent e) { if (e.getClickCount() == 2) selectAction.run(); }
         });
-
         table.addKeyListener(new KeyAdapter() {
-            public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_ENTER) selectAction.run();
-            }
+            public void keyPressed(KeyEvent e) { if (e.getKeyCode() == KeyEvent.VK_ENTER) selectAction.run(); }
         });
-
-        JButton selectBtn = new JButton("Select");
+        
+        JButton selectBtn = new JButton("✅ Select");
         selectBtn.addActionListener(e -> selectAction.run());
-
+        
         dialog.add(new JScrollPane(table), BorderLayout.CENTER);
         dialog.add(selectBtn, BorderLayout.SOUTH);
         dialog.setVisible(true);
-
-        return selectedBook[0];
+        
+        return selected[0];
     }
 
     private void searchUsers() {
         String text = userSearchField.getText().trim();
         if (text.isEmpty()) return;
-
+        
         List<User> users = userDAO.searchByName(text);
         if (users.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "No users found");
+            CommonMethods.showWarning(this, "No users found");
             return;
         }
-
-        User u = showUserSelectionDialog(users);
-        if (u != null) {
-            selectedUserId = u.getId();          // ✅ ID stored
-            suppressUserSearch = true;
-            userSearchField.setText(u.getUsername()); // ✅ text set
-            selectedUserLabel.setText("✓ " + u.getUsername());
+        
+        User user = showSelectionDialog("Select User", users, 1, User::getId, User::getUsername);
+        if (user != null) {
+            suppressSearch = true;
+            selectedUserId = user.getId();
+            userSearchField.setText(user.getUsername());
+            selectedUserLabel.setText("✓ " + user.getUsername());
             selectedUserLabel.setForeground(Color.GREEN);
+            SwingUtilities.invokeLater(() -> suppressSearch = false);
         }
     }
-
+    
     private void searchBooks() {
         String text = bookSearchField.getText().trim();
         if (text.isEmpty()) return;
-
+        
         List<Book> books = bookDAO.searchByTitle(text);
         if (books.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "No books found");
+            CommonMethods.showWarning(this, "No books found");
             return;
         }
-
-        Book b = showBookSelectionDialog(books);
-        if (b != null) {
-            selectedBookId = b.getId();          // ✅ ID stored
-            suppressBookSearch = true;
-            bookSearchField.setText(b.getTitle()); // ✅ text set
-            selectedBookLabel.setText("✓ " + b.getTitle());
+        
+        Book book = showSelectionDialog("Select Book", books, 2, Book::getId, Book::getTitle);
+        if (book != null) {
+            suppressSearch = true;
+            selectedBookId = book.getId();
+            bookSearchField.setText(book.getTitle());
+            selectedBookLabel.setText("✓ " + book.getTitle());
             selectedBookLabel.setForeground(Color.GREEN);
+            SwingUtilities.invokeLater(() -> suppressSearch = false);
         }
     }
 
-
-
-    private void initUI() {
-        setLayout(new BorderLayout(10, 10));
-        setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
-
-        add(createIssuePanel(), BorderLayout.WEST);
-
-        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
-        mainPanel.add(createFilterPanel(), BorderLayout.NORTH);
-        
-        setupActiveIssuesTable();
-        JScrollPane scrollPane = new JScrollPane(activeIssuesTable);
-        TitledBorder border = BorderFactory.createTitledBorder("Active Issued Books");
-        border.setTitleFont(new Font("Segoe UI", Font.BOLD, 14));
-        scrollPane.setBorder(border);
-        mainPanel.add(scrollPane, BorderLayout.CENTER);
-        
-        JPanel bottomPanel = new JPanel(new BorderLayout());
-        bottomPanel.add(createPaginationPanel(), BorderLayout.WEST);
-        bottomPanel.add(createButtonPanel(), BorderLayout.EAST);
-        mainPanel.add(bottomPanel, BorderLayout.SOUTH);
-        
-        add(mainPanel, BorderLayout.CENTER);
-    }
-
-    // ✅ UPDATED: Table shows Username & Book Title
-    private void setupActiveIssuesTable() {
-        activeIssuesModel = new DefaultTableModel(
-                new Object[]{"Issue ID", "Username", "Book Title", "Issue Date", "Due Date", "Status"},
-                0
-        ) {
-            @Override
-            public boolean isCellEditable(int row, int col) { return false; }
-        };
-
-        activeIssuesTable = new JTable(activeIssuesModel);
-        
-        sorter = new TableRowSorter<>(activeIssuesModel);
-        activeIssuesTable.setRowSorter(sorter);
-        setupColumnComparators();
-        sorter.setSortKeys(List.of(new javax.swing.RowSorter.SortKey(0, javax.swing.SortOrder.ASCENDING)));
-        
-        activeIssuesTable.setRowHeight(28);
-        activeIssuesTable.setGridColor(new java.awt.Color(230, 230, 230));
-        activeIssuesTable.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-        activeIssuesTable.setShowGrid(true);
-        activeIssuesTable.setIntercellSpacing(new Dimension(0, 1));
-        activeIssuesTable.getTableHeader().setReorderingAllowed(true);
-
-        DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
-        centerRenderer.setHorizontalAlignment(JLabel.CENTER);
-        DefaultTableCellRenderer leftRenderer = new DefaultTableCellRenderer();
-        leftRenderer.setHorizontalAlignment(JLabel.LEFT);
-
-        int[] widths = {70, 140, 200, 120, 120, 90};
-        for (int i = 0; i < activeIssuesTable.getColumnCount(); i++) {
-            activeIssuesTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
-            if (i == 1 || i == 2 || i == 5) {
-                activeIssuesTable.getColumnModel().getColumn(i).setCellRenderer(leftRenderer);
-            } else {
-                activeIssuesTable.getColumnModel().getColumn(i).setCellRenderer(centerRenderer);
-            }
+    private void issueBook() {
+        if (selectedUserId == -1 || selectedBookId == -1) {
+            CommonMethods.showWarning(this, "Please select both User and Book");
+            return;
         }
-
-        activeIssuesTable.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
-        activeIssuesTable.getTableHeader().setBackground(new java.awt.Color(248, 249, 250));
-        activeIssuesTable.getTableHeader().setForeground(new java.awt.Color(33, 33, 33));
-    }
-
-    private void setupColumnComparators() {
-        for (int i = 0; i < activeIssuesModel.getColumnCount(); i++) {
-            sorter.setComparator(i, createColumnComparator(i));
+        
+        User user = userDAO.findById(selectedUserId);
+        if (user == null || !bookDAO.decreaseAvailableCopies(selectedBookId)) {
+            CommonMethods.showWarning(this, "Invalid selection or no stock");
+            return;
         }
-    }
-
-    private Comparator<Object> createColumnComparator(int columnIndex) {
-        return (o1, o2) -> {
-            return switch (columnIndex) {
-                case 0 -> { // Issue ID
-                    int n1 = o1 instanceof Number ? ((Number) o1).intValue() : 0;
-                    int n2 = o2 instanceof Number ? ((Number) o2).intValue() : 0;
-                    yield Integer.compare(n1, n2);
-                }
-                case 1, 2, 5 -> { // Text columns
-                    String s1 = o1 != null ? o1.toString() : "";
-                    String s2 = o2 != null ? o2.toString() : "";
-                    yield s1.compareToIgnoreCase(s2);
-                }
-                case 3, 4 -> { // Dates
-                    String s1 = o1 != null ? o1.toString() : "";
-                    String s2 = o2 != null ? o2.toString() : "";
-                    yield s1.compareTo(s2);
-                }
-                default -> 0;
-            };
-        };
+        
+        int days = (int) dueDateDaysSpinner.getValue();
+        LocalDate today = LocalDate.now();
+        
+        BookIssue issue = new BookIssue();
+        issue.setUserId(selectedUserId);
+        issue.setBookId(selectedBookId);
+        issue.setIssueDate(Timestamp.valueOf(today.atStartOfDay()));
+        issue.setDueDate(Timestamp.valueOf(today.plusDays(days).atStartOfDay()));
+        issue.setStatus("ISSUED");
+            
+        if (issueDAO.issueBook(issue)) {
+            CommonMethods.showMessage(this, "✅ Book issued to " + user.getUsername());
+            resetForm();
+            loadPage(currentPage);
+        } else {
+            bookDAO.increaseAvailableCopies(selectedBookId);
+            CommonMethods.showError(this, "Failed to issue book");
+        }
     }
     
+    private void resetForm() {
+        suppressSearch = true;
+        selectedUserId = selectedBookId = -1;
+        userSearchField.setText(""); 
+        bookSearchField.setText("");
+        selectedUserLabel.setText("👤 No user selected"); 
+        selectedUserLabel.setForeground(new Color(117, 117, 117));
+        selectedBookLabel.setText("📖 No book selected"); 
+        selectedBookLabel.setForeground(new Color(117, 117, 117));
+        dueDateDaysSpinner.setValue(14);
+        SwingUtilities.invokeLater(() -> suppressSearch = false);
+    }
+
+    // Issues table methods
+    private JPanel createIssuesPanel() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.add(createFilterPanel(), BorderLayout.NORTH);
+        
+        setupTable();
+        JScrollPane scrollPane = new JScrollPane(activeIssuesTable);
+        scrollPane.setBorder(createTitledBorder("Active Issued Books"));
+        panel.add(scrollPane, BorderLayout.CENTER);
+        
+        panel.add(createBottomPanel(), BorderLayout.SOUTH);
+        return panel;
+    }
+    
+    private void setupTable() {
+    activeIssuesTable.setModel(activeIssuesModel);
+    sorter = new TableRowSorter<>(activeIssuesModel);
+    activeIssuesTable.setRowSorter(sorter);
+    
+    // Setup renderers
+    DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
+    centerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+    DefaultTableCellRenderer leftRenderer = new DefaultTableCellRenderer();
+    leftRenderer.setHorizontalAlignment(SwingConstants.LEFT);
+    
+    int[] widths = {70, 140, 200, 120, 120, 90};
+    for (int i = 0; i < TABLE_COLS.length; i++) {
+        TableColumn col = activeIssuesTable.getColumnModel().getColumn(i);
+        col.setPreferredWidth(widths[i]);
+        col.setCellRenderer(i == 1 || i == 2 || i == 5 ? leftRenderer : centerRenderer);
+        sorter.setComparator(i, createColumnComparator(i));  // ✅ Fixed comparator
+    }
+    
+    activeIssuesTable.setRowHeight(28);
+    activeIssuesTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+    activeIssuesTable.setShowGrid(true);
+    activeIssuesTable.setGridColor(new Color(230, 230, 230));
+    sorter.setSortKeys(List.of(new RowSorter.SortKey(0, SortOrder.ASCENDING)));
+    
+    // Header styling
+    activeIssuesTable.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+    activeIssuesTable.getTableHeader().setBackground(new Color(248, 249, 250));
+    activeIssuesTable.getTableHeader().setForeground(new Color(33, 33, 33));
+    activeIssuesTable.getTableHeader().setReorderingAllowed(true);
+}
+
+    private Comparator<Object> createColumnComparator(int col) {
+        return switch (col) {
+            case 0 -> (o1, o2) -> {
+                int n1 = o1 instanceof Number ? ((Number) o1).intValue() : 0;
+                int n2 = o2 instanceof Number ? ((Number) o2).intValue() : 0;
+                return Integer.compare(n1, n2);
+            };
+            case 1, 2, 5 -> (o1, o2) -> {
+                String s1 = o1 != null ? o1.toString() : "";
+                String s2 = o2 != null ? o2.toString() : "";
+                return s1.compareToIgnoreCase(s2);
+            };
+            case 3, 4 -> (o1, o2) -> {
+                String s1 = o1 != null ? o1.toString() : "";
+                String s2 = o2 != null ? o2.toString() : "";
+                return s1.compareTo(s2);
+            };
+            default -> (o1, o2) -> 0;
+        };
+    }
+
+
+    
     private JPanel createFilterPanel() {
-        JPanel filterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 8));
-        filterPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 15, 0));
-
-        JLabel searchLabel = new JLabel("🔍 Search: ");
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 8));
+        panel.setBorder(BorderFactory.createEmptyBorder(0, 0, 15, 0));
+        
         searchField = new JTextField(20);
-        Timer searchTimer = new Timer(300, e -> applyFilters());
-        searchTimer.setRepeats(false);
-        searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { searchTimer.restart(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { searchTimer.restart(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { searchTimer.restart(); }
-        });
-        searchField.addActionListener(e -> {
-            searchTimer.stop();
-            searchTimer.start();
-        });
-
-        JLabel statusLabel = new JLabel("Status: ");
-        String[] statuses = {"All", "ISSUED", "OVERDUE"};
-        statusFilter = new JComboBox<>(statuses);
+        statusFilter = new JComboBox<>(STATUSES);
+        
+        setupDebounce(searchField, 300, this::applyFilters);
         statusFilter.addActionListener(e -> applyFilters());
-
-        filterPanel.add(searchLabel);
-        filterPanel.add(searchField);
-        filterPanel.add(statusLabel);
-        filterPanel.add(statusFilter);
-
-        return filterPanel;
+        
+        panel.add(new JLabel("🔍 Search: "));
+        panel.add(searchField);
+        panel.add(new JLabel("Status: "));
+        panel.add(statusFilter);
+        return panel;
+    }
+    
+    private JPanel createBottomPanel() {
+        JPanel bottom = new JPanel(new BorderLayout());
+        bottom.add(createPaginationPanel(), BorderLayout.WEST);
+        bottom.add(createButtonPanel(), BorderLayout.EAST);
+        return bottom;
     }
     
     private JPanel createPaginationPanel() {
-        JPanel paginationPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         prevBtn = new JButton("⬅️ Previous");
         nextBtn = new JButton("➡️ Next");
-        pageInfoLabel = new JLabel("Page 1 (1-20 of 0)");
+        pageInfoLabel = new JLabel("Page 1 (1-25 of 0)");
         
         prevBtn.setEnabled(false);
         nextBtn.setEnabled(false);
         prevBtn.addActionListener(e -> previousPage());
         nextBtn.addActionListener(e -> nextPage());
         
-        paginationPanel.add(prevBtn);
-        paginationPanel.add(pageInfoLabel);
-        paginationPanel.add(nextBtn);
-        return paginationPanel;
+        panel.add(prevBtn);
+        panel.add(pageInfoLabel);
+        panel.add(nextBtn);
+        return panel;
     }
     
-    private void applyFilters() {
-        RowFilter<DefaultTableModel, Object> filter = null;
-        List<RowFilter<DefaultTableModel, Object>> filters = new ArrayList<>();
-
-        String searchText = searchField.getText().toLowerCase().trim();
-        if (!searchText.isEmpty()) {
-            filters.add(RowFilter.regexFilter("(?i)" + searchText));
-        }
-
-        String status = (String) statusFilter.getSelectedItem();
-        if (!"All".equals(status)) {
-            filters.add(RowFilter.regexFilter("(?i)" + status, 5));
-        }
-
-        if (!filters.isEmpty()) {
-            filter = RowFilter.andFilter(filters);
-        }
-        sorter.setRowFilter(filter);
-    }
-
-    
-    private void loadPage(int page) {
-        currentPage = page;
-        
-        new Thread(() -> {
-            try {
-                List<BookIssue> issues = issueDAO.getActiveIssuesWithPagination(page * pageSize, pageSize);
-                totalRecords = issueDAO.getActiveIssuesCount();
-                
-                SwingUtilities.invokeLater(() -> {
-                    activeIssuesModel.setRowCount(0);
-                    for (BookIssue bi : issues) {
-                        User user = userDAO.findById(bi.getUserId());
-                        Book book = bookDAO.findById(bi.getBookId());
-                        activeIssuesModel.addRow(new Object[]{
-                                bi.getId(),
-                                user != null ? user.getUsername() : "Unknown",
-                                book != null ? book.getTitle() : "Unknown",
-                                formatDate(bi.getIssueDate()),
-                                formatDate(bi.getDueDate()),
-                                bi.getStatus() != null ? bi.getStatus() : "—"
-                        });
-                    }
-                    updatePaginationControls();
-                });
-            } catch (Exception e) {
-                SwingUtilities.invokeLater(() -> 
-                    JOptionPane.showMessageDialog(this, "Load failed: " + e.getMessage())
-                );
-            }
-        }).start();
-    }
-
-    private String formatDate(Timestamp ts) {
-        return ts != null ? ts.toString().split(" ")[0] : "—";
-    }
-
-    private void previousPage() {
-        if (currentPage > 0) loadPage(currentPage - 1);
-    }
-
-    private void nextPage() {
-        if ((currentPage + 1) * pageSize < totalRecords) loadPage(currentPage + 1);
-    }
-    
-    private void updatePaginationControls() {
-        int start = currentPage * pageSize + 1;
-        int end = Math.min(start + pageSize - 1, totalRecords);
-        pageInfoLabel.setText(String.format("Page %d (%d-%d of %d)", 
-            currentPage + 1, start, end, totalRecords));
-        prevBtn.setEnabled(currentPage > 0);
-        nextBtn.setEnabled((currentPage + 1) * pageSize < totalRecords);
-    }
-
     private JPanel createButtonPanel() {
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 10));
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 10));
         refreshBtn = new JButton("🔄 Refresh");
         returnBtn = new JButton("↩️ Return Selected");
         
         refreshBtn.addActionListener(e -> loadCurrentPage());
         returnBtn.addActionListener(e -> returnSelectedIssue());
         
-        buttonPanel.add(refreshBtn);
-        buttonPanel.add(returnBtn);
-        return buttonPanel;
+        panel.add(refreshBtn);
+        panel.add(returnBtn);
+        return panel;
     }
-
+    
+    private void applyFilters() {
+        List<RowFilter<Object,Object>> filters = new ArrayList<>();
+        String searchText = searchField.getText().toLowerCase().trim();
+        if (!searchText.isEmpty()) {
+            filters.add(RowFilter.regexFilter("(?i)" + searchText));
+        }
+        String status = (String) statusFilter.getSelectedItem();
+        if (!"All".equals(status)) {
+            filters.add(RowFilter.regexFilter("(?i)" + status, 5));
+        }
+        sorter.setRowFilter(filters.isEmpty() ? null : RowFilter.andFilter(filters));
+    }
+    
+    private void loadPage(int page) {
+        currentPage = page;
+        new SwingWorker<List<BookIssue>, Void>() {
+            @Override protected List<BookIssue> doInBackground() {
+                return issueDAO.getActiveIssuesWithPagination(page * PAGE_SIZE, PAGE_SIZE);
+            }
+            @Override protected void done() {
+                try {
+                    totalRecords = issueDAO.getActiveIssuesCount();
+                    activeIssuesModel.setRowCount(0);
+                    get().forEach(this::addTableRow);
+                    updatePagination();  // ✅ Now defined
+                } catch (Exception e) {
+                    CommonMethods.showError(IssueReturnPanel.this, "Load failed: " + e.getMessage());
+                }
+            }
+            private void addTableRow(BookIssue issue) {
+                User user = userDAO.findById(issue.getUserId());
+                Book book = bookDAO.findById(issue.getBookId());
+                activeIssuesModel.addRow(new Object[]{
+                    issue.getId(),
+                    user != null ? user.getUsername() : "Unknown",
+                    book != null ? book.getTitle() : "Unknown",
+                    formatDate(issue.getIssueDate()),
+                    formatDate(issue.getDueDate()),
+                    issue.getStatus() != null ? issue.getStatus() : "—"
+                });
+            }
+        }.execute();
+    }
+    
+    // ✅ MISSING METHOD - Now defined!
+    private void updatePagination() {
+        int start = currentPage * PAGE_SIZE + 1;
+        int end = Math.min(start + PAGE_SIZE - 1, totalRecords);
+        pageInfoLabel.setText(String.format("Page %d (%d-%d of %d)", 
+            currentPage + 1, start, end, totalRecords));
+        prevBtn.setEnabled(currentPage > 0);
+        nextBtn.setEnabled((currentPage + 1) * PAGE_SIZE < totalRecords);
+    }
+    
+    private void previousPage() {
+        if (currentPage > 0) loadPage(currentPage - 1);
+    }
+    
+    private void nextPage() {
+        if ((currentPage + 1) * PAGE_SIZE < totalRecords) loadPage(currentPage + 1);
+    }
+    
     private void loadCurrentPage() {
         searchField.setText("");
-        if (statusFilter != null && statusFilter.getItemCount() > 0) {
-            statusFilter.setSelectedIndex(0);
-        }
+        statusFilter.setSelectedIndex(0);
         applyFilters();
         loadPage(currentPage);
     }
-
-    // ✅ UPDATED: Uses selected IDs instead of text fields
-    private void issueBook() {
-        if (selectedUserId == -1 || selectedBookId == -1) {
-            JOptionPane.showMessageDialog(this, "Please search and select both User and Book first.", "Missing Selection", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        User user = userDAO.findById(selectedUserId);
-        if (user == null) {
-            JOptionPane.showMessageDialog(this, "Selected user not found.", "User Not Found", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        boolean stockOk = bookDAO.decreaseAvailableCopies(selectedBookId);
-        if (!stockOk) {
-            JOptionPane.showMessageDialog(this, "Selected book not available.", "No Stock", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-
-        int days = (int) dueDateDaysSpinner.getValue();
-        LocalDate today = LocalDate.now();
-        LocalDate dueDateLocal = today.plusDays(days);
-
-        BookIssue issue = new BookIssue();
-        issue.setUserId(selectedUserId);
-        issue.setBookId(selectedBookId);
-        issue.setIssueDate(Timestamp.valueOf(today.atStartOfDay()));
-        issue.setDueDate(Timestamp.valueOf(dueDateLocal.atStartOfDay()));
-        issue.setStatus("ISSUED");
-
-        boolean ok = issueDAO.issueBook(issue);
-        if (ok) {
-            JOptionPane.showMessageDialog(this, "✅ Book issued successfully to " + user.getUsername() + "!", "Success", JOptionPane.INFORMATION_MESSAGE);
-            loadPage(currentPage);  // Refresh current page
-            // Reset selection
-            resetIssueForm();
-        } else {
-            bookDAO.increaseAvailableCopies(selectedBookId);
-            JOptionPane.showMessageDialog(this, "❌ Failed to issue book. Check logs.", "Error", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    // ✅ UPDATED: Return uses Issue ID from first column
+    
     private void returnSelectedIssue() {
         int row = activeIssuesTable.getSelectedRow();
         if (row < 0) {
-            JOptionPane.showMessageDialog(this, "Please select an issue to return.", "No Selection", JOptionPane.WARNING_MESSAGE);
+            CommonMethods.showWarning(this, "Please select an issue to return.");
             return;
         }
 
         int modelRow = activeIssuesTable.convertRowIndexToModel(row);
         int issueId = (Integer) activeIssuesModel.getValueAt(modelRow, 0);
-        
-        // Get book ID by re-fetching the issue
         BookIssue issue = issueDAO.findById(issueId);
+        
         if (issue == null) {
-            JOptionPane.showMessageDialog(this, "Issue not found.", "Error", JOptionPane.ERROR_MESSAGE);
+            CommonMethods.showError(this, "Issue not found.");
             return;
         }
 
-        int confirm = JOptionPane.showConfirmDialog(
-                this,
-                String.format("Return issue #%d?\nBook: %s", issueId, activeIssuesModel.getValueAt(modelRow, 2)),
-                "Confirm Return",
-                JOptionPane.YES_NO_OPTION,
-                JOptionPane.QUESTION_MESSAGE
-        );
+        int confirm = JOptionPane.showConfirmDialog(this,
+            String.format("Return issue #%d?\nBook: %s", issueId, activeIssuesModel.getValueAt(modelRow, 2)),
+            "Confirm Return", JOptionPane.YES_NO_OPTION);
 
         if (confirm == JOptionPane.YES_OPTION) {
             boolean okIssue = issueDAO.returnBook(issueId);
             boolean okStock = bookDAO.increaseAvailableCopies(issue.getBookId());
-
             if (okIssue && okStock) {
-                JOptionPane.showMessageDialog(this, "✅ Book returned successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                CommonMethods.showMessage(this, "✅ Book returned successfully!");
                 loadPage(currentPage);
             } else {
-                JOptionPane.showMessageDialog(this, "❌ Failed to return book. Check logs.", "Error", JOptionPane.ERROR_MESSAGE);
+                CommonMethods.showError(this, "❌ Failed to return book.");
             }
         }
     }
-    
-    private void resetIssueForm() {
 
-        suppressUserSearch = true;
-        suppressBookSearch = true;
-
-        selectedUserId = -1;
-        selectedBookId = -1;
-
-        userSearchField.setText("");
-        bookSearchField.setText("");
-
-        selectedUserLabel.setText("👤 No user selected");
-        selectedUserLabel.setForeground(new Color(117, 117, 117));
-
-        selectedBookLabel.setText("📖 No book selected");
-        selectedBookLabel.setForeground(new Color(117, 117, 117));
-
-        dueDateDaysSpinner.setValue(14);
-
-        // 🔓 RE-ENABLE AUTO SEARCH AFTER RESET
-        SwingUtilities.invokeLater(() -> {
-            suppressUserSearch = false;
-            suppressBookSearch = false;
-        });
+    // Utility methods
+    private static JSpinner createSpinner() {
+        return new JSpinner(new SpinnerNumberModel(14, 1, 365, 1)) {{
+            ((JSpinner.DefaultEditor) getEditor()).getTextField().setColumns(8);
+            setPreferredSize(new Dimension(140, 34));
+            setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY));
+        }};
     }
-
-
+    
+    private static TitledBorder createTitledBorder(String title) {
+        TitledBorder border = BorderFactory.createTitledBorder(title);
+        border.setTitleFont(new Font("Segoe UI", Font.BOLD, 14));
+        return border;
+    }
+    
+    private static JPanel wrapCenter(JPanel panel) {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.add(panel, BorderLayout.CENTER);
+        return wrapper;
+    }
+    
+    private String formatDate(Timestamp ts) {
+        return ts != null ? ts.toString().split(" ")[0] : "—";
+    }
+    
     public void refreshData() {
         loadPage(currentPage);
     }
