@@ -11,7 +11,6 @@ import util.DBUtil;
 
 public class BookIssueDAO {
  public BookIssueDAO() {
-    
  }
  
 //In BookIssueDAO.java
@@ -217,9 +216,8 @@ public int getActiveIssuesCount() {
 }
 
 public BookIssue findById(int id) {
-    String sql = "SELECT id, user_id, book_id, issue_date, due_date, return_date, status, fine_amount " +
+    String sql = "SELECT id, user_id, book_id, issue_date, due_date, return_date, status " +
                 "FROM book_issues WHERE id = ?";
-    
     try (Connection conn = DBUtil.getConnection();
          PreparedStatement pstmt = conn.prepareStatement(sql)) {
         
@@ -244,9 +242,5 @@ public BookIssue findById(int id) {
     }
     return null;
 }
-
-
-
-
 
 }
